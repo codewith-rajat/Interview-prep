@@ -20,7 +20,7 @@ const JoinWaitingRoom = () => {
     const fetchInterviewData = async () => {
       try {
         // Get current user
-        const userRes = await API.get("/users/profile");
+        const userRes = await API.get("/users/me");
         setCurrentUser(userRes.data.data);
 
         // Find interview by roomId

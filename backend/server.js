@@ -43,19 +43,29 @@ io.on("connection", (socket) => {
   });
 
   // WebRTC Signaling
-  socket.on("offer", ({ roomId, offer, to }) => {
-    io.to(to).emit("offer", { offer, from: socket.id });
+  socket.on("offer", ({ roomId, offer }) => {
+    socket.to(roomId).emit("offer", offer);
   });
 
-  socket.on("answer", ({ roomId, answer, to }) => {
-    io.to(to).emit("answer", { answer, from: socket.id });
+  socket.on("answer", ({ roomId, answer }) => {
+    socket.to(roomId).emit("answer", answer);
   });
 
-  socket.on("ice-candidate", ({ roomId, candidate, to }) => {
-    io.to(to).emit("ice-candidate", { candidate, from: socket.id });
+  socket.on("ice-candidate", ({ roomId, candidate }) => {
+    socket.to(roomId).emit("ice-candidate", candidate);
   });
 
-  // Chat messages
+  // 💬 Chat messages - Enhanced to work with frontend format
+  socket.on("chat-message", ({ roomId, message }) => {
+    console.log(`[${roomId}] Chat: ${message.content}`);
+    io.to(roomId).emit("chat-message", { 
+      sender: message.sender, 
+      content: message.content, 
+      timestamp: message.timestamp
+    });
+  });
+
+  // Legacy chat format support
   socket.on("chat", ({ roomId, message, user }) => {
     console.log(`[${roomId}] ${user.name}: ${message}`);
     io.to(roomId).emit("chat", { 
@@ -91,6 +101,18 @@ io.on("connection", (socket) => {
     io.to(roomId).emit("recording-stopped", { from: socket.id, timestamp: new Date() });
   });
 
+  // 📺 Screen Share - Enhanced to work with frontend format
+  socket.on("screen-share-start", ({ roomId }) => {
+    console.log(`[${roomId}] Screen share started by ${socket.id}`);
+    socket.to(roomId).emit("screen-share-start", { from: socket.id });
+  });
+
+  socket.on("screen-share-stop", ({ roomId }) => {
+    console.log(`[${roomId}] Screen share stopped by ${socket.id}`);
+    socket.to(roomId).emit("screen-share-stop", { from: socket.id });
+  });
+
+  // Legacy screen share events
   socket.on("start-screen-share", ({ roomId }) => {
     io.to(roomId).emit("screen-share-started", { from: socket.id });
   });

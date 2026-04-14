@@ -176,10 +176,11 @@ export const getAvailableSlots = async (req, res) => {
       return res.status(400).json({ message: "Missing fields" });
     }
 
-    const queryDate = new Date(date);
-    queryDate.setHours(0, 0, 0, 0);
+    // Parse date correctly in local timezone
+    const [year, month, day] = date.split("-").map(Number);
+    const queryDate = new Date(year, month - 1, day, 0, 0, 0, 0);
 
-    const dayOfWeek = new Date(date).getDay();
+    const dayOfWeek = queryDate.getDay();
 
     // Check for custom availability first
     let availability = await Availability.findOne({
@@ -226,16 +227,21 @@ export const getAvailableSlots = async (req, res) => {
       });
     });
 
-    const startOfDay = new Date(date);
-    startOfDay.setHours(0, 0, 0, 0);
+    // Create date range for booking check (start and end of day in local timezone)
+    const startOfDay = new Date(year, month - 1, day, 0, 0, 0, 0);
+    const endOfDay = new Date(year, month - 1, day, 23, 59, 59, 999);
 
-    const endOfDay = new Date(date);
-    endOfDay.setHours(23, 59, 59, 999);
+    console.log(`🔍 Checking BookedSlots for interviewer=${interviewerId}, date=${startOfDay.toDateString()}`);
 
     // ✅ Use BookedSlots instead of InterviewSession to track booked times
     const bookedSlots = await BookedSlots.find({
       interviewer: interviewerId,
       date: { $gte: startOfDay, $lte: endOfDay }
+    });
+
+    console.log(`📍 Found ${bookedSlots.length} booked slots for this date`);
+    bookedSlots.forEach(bs => {
+      console.log(`   - ${bs.startTime} to ${bs.endTime}`);
     });
 
     const bookedStartTimes = bookedSlots.map(bs => bs.startTime);
@@ -244,12 +250,15 @@ export const getAvailableSlots = async (req, res) => {
       slot => !bookedStartTimes.includes(slot.startTime)
     );
 
+    console.log(`✅ Returning ${availableSlots.length} available slots out of ${allSlots.length}`);
+
     res.json({
       success: true,
       data: availableSlots
     });
 
   } catch (error) {
+    console.error(`❌ Error in getAvailableSlots:`, error);
     res.status(500).json({ 
       success: false,
       message: "Server error" 

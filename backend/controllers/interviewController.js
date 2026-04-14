@@ -43,7 +43,8 @@ export const createInterview = async (req, res) => {
 
     const existing = await InterviewSession.findOne({
       interviewer: interviewerId,
-      scheduledAt: { $gte: startOfSlot, $lt: endOfSlot }
+      scheduledAt: { $gte: startOfSlot, $lt: endOfSlot },
+      status: { $in: ["pending", "accepted", "scheduled"] } // Only check active interviews, NOT cancelled
     });
 
     if (existing) {
@@ -69,11 +70,13 @@ export const createInterview = async (req, res) => {
     slotEndTime.setMinutes(slotEndTime.getMinutes() + duration);
     const slotEndTimeStr = `${String(slotEndTime.getHours()).padStart(2, "0")}:${String(slotEndTime.getMinutes()).padStart(2, "0")}`;
     
-    // Create date object at start of day for consistent storage
-    const dateAtStartOfDay = new Date(interviewTime);
-    dateAtStartOfDay.setHours(0, 0, 0, 0);
+    // Create date object at start of day for consistent storage (local timezone)
+    const year = interviewTime.getFullYear();
+    const month = interviewTime.getMonth();
+    const date = interviewTime.getDate();
+    const dateAtStartOfDay = new Date(year, month, date, 0, 0, 0, 0);
 
-    console.log(`📍 Creating BookedSlots record: date=${interviewTime.toDateString()}, startTime=${slotTime}, endTime=${slotEndTimeStr}`);
+    console.log(`📍 Creating BookedSlots record: date=${dateAtStartOfDay.toDateString()}, startTime=${slotTime}, endTime=${slotEndTimeStr}, interviewTime=${interviewTime}`);
 
     try {
       const bookedSlot = await BookedSlots.create({
