@@ -1,287 +1,375 @@
-import { useState, useEffect } from "react";
+import React, { useEffect, useState } from "react";
+import { Plus, X, ChevronDown } from "lucide-react";
 import API from "../../utils/api";
-import { useNavigate } from "react-router-dom";
-import { Clock, Save, X } from "lucide-react";
 
-const daysOfWeek = [
-  "Sunday",
-  "Monday",
-  "Tuesday",
-  "Wednesday",
-  "Thursday",
-  "Friday",
-  "Saturday",
-];
+const SetAvailability = () => {
+  const [duration, setDuration] = useState(60);
+  const [availability, setAvailability] = useState([
+    { day: "Monday", isSelected: false, startTime: "09:00", endTime: "17:00", slots: [] },
+    { day: "Tuesday", isSelected: false, startTime: "09:00", endTime: "17:00", slots: [] },
+    { day: "Wednesday", isSelected: false, startTime: "09:00", endTime: "17:00", slots: [] },
+    { day: "Thursday", isSelected: false, startTime: "09:00", endTime: "17:00", slots: [] },
+    { day: "Friday", isSelected: false, startTime: "09:00", endTime: "17:00", slots: [] },
+    { day: "Saturday", isSelected: false, startTime: "09:00", endTime: "17:00", slots: [] },
+    { day: "Sunday", isSelected: false, startTime: "09:00", endTime: "17:00", slots: [] },
+  ]);
 
-// Generate time options (every 15 minutes)
-const generateTimeOptions = () => {
-  const times = [];
-  for (let h = 0; h < 24; h++) {
-    for (let m = 0; m < 60; m += 15) {
-      const hour = String(h).padStart(2, "0");
-      const min = String(m).padStart(2, "0");
-      times.push(`${hour}:${min}`);
-    }
-  }
-  return times;
-};
-
-const timeOptions = generateTimeOptions();
-
-function Toast({ message, type }) {
-  const colors = {
-    success: "bg-emerald-500/20 border-emerald-500/50 text-emerald-300",
-    error: "bg-red-500/20 border-red-500/50 text-red-300",
-    warning: "bg-amber-500/20 border-amber-500/50 text-amber-300",
-    info: "bg-blue-500/20 border-blue-500/50 text-blue-300",
-  };
-
-  const icon = {
-    success: "✓",
-    error: "✕",
-    warning: "!",
-    info: "i",
-  }[type] || "•";
-
-  return (
-    <div
-      className={`${colors[type]} border px-4 py-3 rounded-lg shadow-lg flex items-center justify-between gap-3 fixed top-4 right-4 z-50`}
-    >
-      <div className="flex items-center gap-3">
-        <span className="font-bold">{icon}</span>
-        <span className="font-medium text-sm">{message}</span>
-      </div>
-    </div>
-  );
-}
-
-export default function SetAvailability() {
   const [loading, setLoading] = useState(false);
-  const [toast, setToast] = useState(null);
-  const [slotDuration, setSlotDuration] = useState("60");
-  const navigate = useNavigate();
+  const [message, setMessage] = useState("");
+  const [existingSlots, setExistingSlots] = useState([]);
 
-  // State for each day of the week
-  const [availability, setAvailability] = useState({
-    0: { enabled: false, startTime: "09:00", endTime: "17:00" },
-    1: { enabled: true, startTime: "09:00", endTime: "17:00" },
-    2: { enabled: true, startTime: "09:00", endTime: "17:00" },
-    3: { enabled: true, startTime: "09:00", endTime: "17:00" },
-    4: { enabled: true, startTime: "09:00", endTime: "17:00" },
-    5: { enabled: true, startTime: "09:00", endTime: "17:00" },
-    6: { enabled: false, startTime: "09:00", endTime: "17:00" },
-  });
+  // ---------------- FETCH EXISTING ----------------
+  useEffect(() => {
+    const fetchAvailability = async () => {
+      try {
+        const res = await API.get("/availability");
 
-  const showToast = (message, type = "success") => {
-    setToast({ message, type });
-    setTimeout(() => setToast(null), 3000);
-  };
+        const allSlots = res.data.data.flatMap((day) =>
+          day.slots.map((slot) => ({
+            dayOfWeek: day.dayOfWeek,
+            startTime: slot.startTime,
+          }))
+        );
 
-  const toggleDay = (dayIndex) => {
-    setAvailability((prev) => ({
-      ...prev,
-      [dayIndex]: {
-        ...prev[dayIndex],
-        enabled: !prev[dayIndex].enabled,
-      },
-    }));
-  };
-
-  const updateStartTime = (dayIndex, time) => {
-    setAvailability((prev) => ({
-      ...prev,
-      [dayIndex]: {
-        ...prev[dayIndex],
-        startTime: time,
-      },
-    }));
-  };
-
-  const updateEndTime = (dayIndex, time) => {
-    setAvailability((prev) => ({
-      ...prev,
-      [dayIndex]: {
-        ...prev[dayIndex],
-        endTime: time,
-      },
-    }));
-  };
-
-  const handleSave = async () => {
-    try {
-      const selectedDays = Object.entries(availability)
-        .filter(([_, day]) => day.enabled)
-        .map(([dayIndex, day]) => ({
-          dayOfWeek: parseInt(dayIndex),
-          slots: [{ startTime: day.startTime, endTime: day.endTime }],
-          slotDuration: parseInt(slotDuration),
-        }));
-
-      if (selectedDays.length === 0) {
-        showToast("Please select at least one day", "error");
-        return;
+        setExistingSlots(allSlots);
+      } catch (err) {
+        console.error(err);
       }
+    };
 
+    fetchAvailability();
+  }, []);
+
+  // ---------------- TIME GENERATOR ----------------
+  const generateTimeSlots = () => {
+    const slots = [];
+    for (let h = 0; h < 24; h++) {
+      for (let m = 0; m < 60; m += duration) {
+        slots.push(
+          `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`
+        );
+      }
+    }
+    return slots;
+  };
+
+  const calculateEndTime = (startTime) => {
+    const [h, m] = startTime.split(":").map(Number);
+    const total = h * 60 + m + duration;
+    const eh = Math.floor(total / 60) % 24;
+    const em = total % 60;
+
+    return `${String(eh).padStart(2, "0")}:${String(em).padStart(2, "0")}`;
+  };
+
+  // ---------------- DAY TOGGLE ----------------
+  const handleDayToggle = (index) => {
+    const updated = [...availability];
+    updated[index].isSelected = !updated[index].isSelected;
+
+    if (updated[index].isSelected) {
+      updated[index].startTime = "09:00";
+      updated[index].endTime = calculateEndTime("09:00");
+      updated[index].slots = [];
+    }
+
+    setAvailability(updated);
+  };
+
+  // ---------------- START TIME CHANGE ----------------
+  const handleStartTimeChange = (index, value) => {
+    const updated = [...availability];
+    updated[index].startTime = value;
+    updated[index].endTime = calculateEndTime(value);
+    updated[index].slots = [];
+    setAvailability(updated);
+  };
+
+  // ---------------- ADD SLOT (FIXED LOGIC) ----------------
+  const handleAddSlot = (index) => {
+    const updated = [...availability];
+    const day = updated[index];
+
+    if (!day.slots) day.slots = [];
+
+    const lastEnd =
+      day.slots.length > 0
+        ? day.slots[day.slots.length - 1].endTime
+        : day.startTime;
+
+    const newStart = lastEnd;
+    const newEnd = calculateEndTime(newStart);
+
+    const existsUI = day.slots.some(
+      (s) => s.startTime === newStart && s.endTime === newEnd
+    );
+
+    const dayMap = {
+      Sunday: 0,
+      Monday: 1,
+      Tuesday: 2,
+      Wednesday: 3,
+      Thursday: 4,
+      Friday: 5,
+      Saturday: 6,
+    };
+
+    const existsDB = existingSlots.some(
+      (s) =>
+        s.dayOfWeek === dayMap[day.day] &&
+        s.startTime === newStart
+    );
+
+    if (existsUI || existsDB) return;
+
+    day.slots.push({
+      startTime: newStart,
+      endTime: newEnd,
+    });
+
+    setAvailability(updated);
+  };
+
+  // ---------------- REMOVE SLOT ----------------
+  const handleRemoveSlot = (dayIndex, slotIndex) => {
+    const updated = [...availability];
+    updated[dayIndex].slots.splice(slotIndex, 1);
+    setAvailability(updated);
+  };
+
+  // ---------------- SAVE ----------------
+  const handleSaveAvailability = async () => {
+    try {
       setLoading(true);
 
-      for (const day of selectedDays) {
-        await API.post("/availability", day);
-      }
+      // Helper function to generate slots between two times
+      const generateSlotsBetween = (startTime, endTime, slotDuration) => {
+        const slots = [];
+        const [startHour, startMin] = startTime.split(":").map(Number);
+        const [endHour, endMin] = endTime.split(":").map(Number);
 
-      showToast("Availability saved successfully!", "success");
-      setTimeout(() => navigate("/dashboard"), 1500);
+        const startMinutes = startHour * 60 + startMin;
+        const endMinutes = endHour * 60 + endMin;
+
+        for (let minutes = startMinutes; minutes < endMinutes; minutes += slotDuration) {
+          const hour = Math.floor(minutes / 60);
+          const min = minutes % 60;
+          const nextMinutes = minutes + slotDuration;
+          const nextHour = Math.floor(nextMinutes / 60);
+          const nextMin = nextMinutes % 60;
+
+          slots.push({
+            startTime: `${String(hour).padStart(2, "0")}:${String(min).padStart(2, "0")}`,
+            endTime: `${String(nextHour).padStart(2, "0")}:${String(nextMin).padStart(2, "0")}`,
+          });
+        }
+
+        return slots;
+      };
+
+      const payload = availability
+        .filter((d) => d.isSelected)
+        .map((d) => {
+          // If slots were manually selected, use them; otherwise generate from time range
+          const slots = d.slots && d.slots.length > 0
+            ? d.slots
+            : generateSlotsBetween(d.startTime, d.endTime, duration);
+
+          return {
+            dayOfWeek: d.day,
+            slots: slots,
+          };
+        });
+
+      console.log(`📤 Sending availability payload:`, JSON.stringify(payload, null, 2));
+
+      await API.post("/availability", {
+        availabilities: payload,
+        duration,
+      });
+
+      setMessage("✅ Availability saved successfully!");
+
+      setTimeout(() => {
+        window.location.reload();
+      }, 1000);
+
     } catch (err) {
-      showToast(
-        err.response?.data?.message || "Error saving availability",
-        "error"
+      console.error(err);
+      setMessage(
+        err.response?.data?.message || "❌ Failed to save availability"
       );
     } finally {
       setLoading(false);
     }
   };
 
+  const timeSlots = generateTimeSlots();
+
+  // ================= UI (RESTORED TAILWIND) =================
   return (
-    <div className="min-h-screen bg-black">
-      {/* HEADER */}
-      <div className="border-b border-white/10 px-6 sm:px-8 py-10">
-        <div className="max-w-6xl mx-auto">
-          <p className="inline-flex items-center gap-2 text-xs font-semibold text-amber-400 tracking-[0.14em] uppercase mb-4">
-            <span className="w-4 h-px bg-amber-400" />
-            Availability
-          </p>
-          <h1 className="font-serif text-4xl sm:text-5xl tracking-tight text-stone-100 mb-2">
-            Set your availability
+    <div className="min-h-screen bg-black p-6">
+      <div className="max-w-4xl mx-auto">
+
+        {/* HEADER */}
+        <div className="mb-8">
+          <h1 className="text-4xl font-bold text-white mb-2">
+            Great! Now let's set your availability
           </h1>
-          <p className="text-stone-400 text-sm sm:text-base">
-            Let candidates know when you're available for interviews
+          <p className="text-gray-400 text-lg">
+            Let your audience know when you're available. You can edit this later
           </p>
         </div>
-      </div>
 
-      {/* CONTENT */}
-      <div className="max-w-6xl mx-auto px-6 sm:px-8 py-12">
-        {toast && <Toast message={toast.message} type={toast.type} />}
+        {/* DURATION */}
+        <div className="bg-[#0f0f11] border border-amber-400/20 rounded-lg p-6 mb-8">
+          <label className="block text-white font-semibold mb-4 text-lg">
+            Session Duration (minutes)
+          </label>
 
-        {/* MAIN CARD */}
-        <div className="bg-[#0f0f11] border border-white/10 rounded-2xl p-6 sm:p-8">
-          {/* DAYS SECTION */}
-          <div className="mb-10">
-            <h2 className="text-lg font-semibold text-stone-100 mb-6">
-              Select your working days
-            </h2>
+          <div className="flex items-center gap-4 mb-3">
+            <input
+              type="number"
+              min="15"
+              max="480"
+              step="15"
+              value={duration}
+              onChange={(e) => setDuration(parseInt(e.target.value) || 60)}
+              className="w-32 bg-black border border-amber-400/30 text-white px-4 py-2 rounded focus:outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-400/20 font-semibold"
+            />
+            <span className="text-gray-400">
+              (Each slot will be exactly {duration} minutes)
+            </span>
+          </div>
 
-            <div className="space-y-4">
-              {daysOfWeek.map((day, index) => (
-                <div
-                  key={index}
-                  className="flex flex-col sm:flex-row sm:items-center gap-4 pb-4 border-b border-white/10 last:border-b-0"
-                >
-                  {/* CHECKBOX & DAY NAME */}
-                  <div className="flex items-center gap-4 flex-shrink-0">
-                    <input
-                      type="checkbox"
-                      checked={availability[index].enabled}
-                      onChange={() => toggleDay(index)}
-                      className="w-5 h-5 rounded accent-amber-500 cursor-pointer"
-                    />
-                    <label className="font-medium text-stone-100 cursor-pointer w-24">
-                      {day}
-                    </label>
-                  </div>
+          <p className="text-xs text-gray-500">
+            💡 Tip: 9:00 AM auto becomes 10:00 AM
+          </p>
+        </div>
 
-                  {/* TIME INPUTS */}
-                  {availability[index].enabled ? (
-                    <div className="flex flex-1 items-center gap-3">
-                      {/* Start Time */}
+        {/* DAYS */}
+        <div className="space-y-4">
+          {availability.map((day, index) => (
+            <div
+              key={index}
+              className="bg-[#0f0f11] border border-amber-400/20 rounded-lg p-6 hover:border-amber-400/40 transition-colors"
+            >
+              {/* DAY HEADER */}
+              <div className="flex items-center gap-4 mb-4">
+                <input
+                  type="checkbox"
+                  checked={day.isSelected}
+                  onChange={() => handleDayToggle(index)}
+                  className="w-5 h-5 accent-amber-400 cursor-pointer"
+                />
+
+                <span className="text-white font-semibold text-lg w-24">
+                  {day.day}
+                </span>
+
+                {!day.isSelected && (
+                  <span className="text-gray-500 ml-auto italic">
+                    Unavailable
+                  </span>
+                )}
+              </div>
+
+              {/* TIME SECTION */}
+              {day.isSelected && (
+                <div className="space-y-4">
+
+                  <div className="flex items-end gap-4 flex-wrap">
+
+                    {/* FROM */}
+                    <div className="flex flex-col">
+                      <label className="text-gray-300 text-sm mb-2">
+                        From:
+                      </label>
+
                       <select
-                        value={availability[index].startTime}
-                        onChange={(e) => updateStartTime(index, e.target.value)}
-                        className="px-3 py-2.5 bg-white/5 border border-white/10 rounded-lg text-stone-100 text-sm focus:outline-none focus:border-amber-400/50 focus:ring-2 focus:ring-amber-400/10 transition-all"
+                        value={day.startTime}
+                        onChange={(e) =>
+                          handleStartTimeChange(index, e.target.value)
+                        }
+                        className="bg-black border border-amber-400/30 text-white px-4 py-2 rounded"
                       >
-                        {timeOptions.map((time) => (
-                          <option key={time} value={time}>
-                            {time}
-                          </option>
-                        ))}
-                      </select>
-
-                      {/* Separator */}
-                      <span className="text-stone-500">→</span>
-
-                      {/* End Time */}
-                      <select
-                        value={availability[index].endTime}
-                        onChange={(e) => updateEndTime(index, e.target.value)}
-                        className="px-3 py-2.5 bg-white/5 border border-white/10 rounded-lg text-stone-100 text-sm focus:outline-none focus:border-amber-400/50 focus:ring-2 focus:ring-amber-400/10 transition-all"
-                      >
-                        {timeOptions.map((time) => (
-                          <option key={time} value={time}>
-                            {time}
+                        {timeSlots.map((slot) => (
+                          <option key={slot} value={slot}>
+                            {slot}
                           </option>
                         ))}
                       </select>
                     </div>
-                  ) : (
-                    <div className="flex-1 text-stone-500 text-sm">
-                      Not available
+
+                    {/* TO */}
+                    <div className="flex flex-col">
+                      <label className="text-gray-300 text-sm mb-2">
+                        To:
+                      </label>
+
+                      <input
+                        type="text"
+                        value={day.endTime}
+                        disabled
+                        className="bg-gray-900/50 border border-amber-400/20 text-gray-400 px-4 py-2 rounded w-20 text-center"
+                      />
+                    </div>
+
+                    {/* ADD */}
+                    <button
+                      onClick={() => handleAddSlot(index)}
+                      className="mt-5 bg-amber-400/10 hover:bg-amber-400/20 text-amber-400 border border-amber-400/30 rounded p-2.5"
+                    >
+                      <Plus size={20} />
+                    </button>
+                  </div>
+
+                  {/* SLOTS */}
+                  {day.slots?.length > 0 && (
+                    <div className="mt-6 pt-4 border-t border-amber-400/20 space-y-2">
+                      {day.slots.map((slot, i) => (
+                        <div
+                          key={i}
+                          className="flex justify-between items-center bg-amber-400/5 p-3 rounded border border-amber-400/10"
+                        >
+                          <span className="text-gray-300">
+                            {slot.startTime} - {slot.endTime}
+                          </span>
+
+                          <button
+                            onClick={() => handleRemoveSlot(index, i)}
+                            className="text-red-400"
+                          >
+                            <X size={18} />
+                          </button>
+                        </div>
+                      ))}
                     </div>
                   )}
                 </div>
-              ))}
+              )}
             </div>
-          </div>
-
-          {/* DURATION SECTION */}
-          <div className="mb-10 pb-10 border-b border-white/10">
-            <h2 className="text-lg font-semibold text-stone-100 mb-4 flex items-center gap-2">
-              <Clock size={20} className="text-amber-400" />
-              Interview Duration
-            </h2>
-            <div className="flex flex-col sm:flex-row sm:items-center gap-4">
-              <select
-                value={slotDuration}
-                onChange={(e) => setSlotDuration(e.target.value)}
-                className="px-4 py-3 bg-white/5 border border-white/10 rounded-lg text-stone-100 text-sm focus:outline-none focus:border-amber-400/50 focus:ring-2 focus:ring-amber-400/10 transition-all min-w-[180px]"
-              >
-                <option value="15">15 minutes</option>
-                <option value="30">30 minutes</option>
-                <option value="45">45 minutes</option>
-                <option value="60">60 minutes (1 hour)</option>
-                <option value="90">90 minutes</option>
-                <option value="120">120 minutes (2 hours)</option>
-              </select>
-              <p className="text-stone-400 text-sm">
-                Each slot will be <span className="font-semibold">{slotDuration}</span> minutes
-              </p>
-            </div>
-          </div>
-
-          {/* ACTION BUTTONS */}
-          <div className="flex flex-col sm:flex-row gap-4">
-            <button
-              onClick={handleSave}
-              disabled={loading}
-              className="flex-1 py-3 px-6 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 disabled:from-amber-500/50 disabled:to-amber-600/50 text-black font-semibold transition-all flex items-center justify-center gap-2"
-            >
-              <Save size={18} />
-              {loading ? "Saving..." : "Save Availability"}
-            </button>
-            <button
-              onClick={() => navigate(-1)}
-              className="flex-1 py-3 px-6 rounded-xl bg-white/5 hover:bg-white/10 text-stone-300 font-semibold transition-all border border-white/10 flex items-center justify-center gap-2"
-            >
-              <X size={18} />
-              Cancel
-            </button>
-          </div>
-
-          {/* INFO TEXT */}
-          <p className="text-stone-500 text-xs mt-6 flex items-start gap-2">
-            <span className="mt-0.5">💡</span>
-            <span>You can edit your availability at any time from your dashboard</span>
-          </p>
+          ))}
         </div>
+
+        {/* SAVE */}
+        <button
+          onClick={handleSaveAvailability}
+          disabled={loading}
+          className="mt-8 w-full bg-gradient-to-r from-amber-400 to-amber-500 text-black font-bold py-3 rounded-lg"
+        >
+          {loading ? "Saving..." : "Save Availability"}
+        </button>
+
+        {/* MESSAGE */}
+        {message && (
+          <div className="mt-4 text-center text-white">
+            {message}
+          </div>
+        )}
       </div>
     </div>
   );
-}
+};
+
+export default SetAvailability;

@@ -1,32 +1,99 @@
-import Availability from "../models/Availability.js";
+﻿import Availability from "../models/Availability.js";
 import InterviewSession from "../models/InterviewSessions.js";
+import BookedSlots from "../models/BookedSlots.js";
 import generateSlots from "../utils/generateSlots.js";
 
-// ✅ SET RECURRING AVAILABILITY (Day of Week)
+const dayMap = {
+  Sunday: 0,
+  Monday: 1,
+  Tuesday: 2,
+  Wednesday: 3,
+  Thursday: 4,
+  Friday: 5,
+  Saturday: 6,
+};
+
+// ✅ SET RECURRING AVAILABILITY (Bulk - Multiple Days)
 export const setAvailability = async (req, res) => {
   try {
-    const { dayOfWeek, slots, slotDuration } = req.body;
+    const userId = req.user.id;
+    const { availabilities, duration = 60 } = req.body;
 
-    const data = await Availability.findOneAndUpdate(
-      { interviewer: req.user.id, dayOfWeek, type: "recurring" },
-      {
-        interviewer: req.user.id,
-        dayOfWeek,
+    console.log(`Setting availability for user: ${userId}`);
+    console.log(`Payload:`, JSON.stringify({ availabilities, duration }, null, 2));
+
+    if (!Array.isArray(availabilities) || availabilities.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Availabilities must be a non-empty array",
+      });
+    }
+
+    // Delete old availability for this user
+    await Availability.deleteMany({ interviewer: userId, type: "recurring" });
+
+    // Create new availability for each day
+    const docs = availabilities.map((day) => {
+      const dayOfWeek = dayMap[day.dayOfWeek];
+      
+      if (dayOfWeek === undefined) {
+        throw new Error(`Invalid day: ${day.dayOfWeek}`);
+      }
+
+      if (!day.slots || day.slots.length === 0) {
+        throw new Error(`Slots required for ${day.dayOfWeek}`);
+      }
+
+      const validatedSlots = day.slots.map((slot) => {
+        if (!slot.startTime || !slot.endTime) {
+          throw new Error("Invalid slot format");
+        }
+
+        if (slot.startTime >= slot.endTime) {
+          throw new Error("Start time must be before end time");
+        }
+
+        return {
+          startTime: slot.startTime,
+          endTime: slot.endTime,
+          isBooked: false,
+          bookedBy: null,
+        };
+      });
+
+      return {
+        interviewer: userId,
         type: "recurring",
-        slots,
-        slotDuration,
-        isActive: true
-      },
-      { upsert: true, new: true }
-    );
+        dayOfWeek: dayOfWeek,
+        slots: validatedSlots,
+        slotDuration: duration,
+        isActive: true,
+      };
+    });
 
-    res.json(data);
+    // Insert all at once
+    const saved = await Availability.insertMany(docs);
+
+    console.log(`✅ Saved ${saved.length} availability records`);
+    saved.forEach((record, idx) => {
+      console.log(`  Record ${idx + 1}: dayOfWeek=${record.dayOfWeek}, slots=${record.slots.length}, type=${record.type}`);
+    });
+
+    res.status(200).json({
+      success: true,
+      message: "Availability saved",
+      data: saved,
+    });
   } catch (error) {
-    res.status(500).json({ message: "Server error" });
+    console.error("❌ setAvailability error:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
   }
 };
 
-// ✅ SET CUSTOM AVAILABILITY (Specific Date with Time Slots)
+// Γ£à SET CUSTOM AVAILABILITY (Specific Date with Time Slots)
 export const setCustomAvailability = async (req, res) => {
   try {
     const { date, slots, slotDuration } = req.body;
@@ -63,7 +130,7 @@ export const setCustomAvailability = async (req, res) => {
   }
 };
 
-// ✅ GET ALL AVAILABILITIES (Both Recurring and Custom)
+// Γ£à GET ALL AVAILABILITIES (Both Recurring and Custom)
 export const getAvailabilities = async (req, res) => {
   try {
     const availabilities = await Availability.find({
@@ -77,7 +144,7 @@ export const getAvailabilities = async (req, res) => {
   }
 };
 
-// ✅ DELETE AVAILABILITY
+// Γ£à DELETE AVAILABILITY
 export const deleteAvailability = async (req, res) => {
   try {
     const { availabilityId } = req.params;
@@ -100,7 +167,7 @@ export const deleteAvailability = async (req, res) => {
   }
 };
 
-// ✅ GET AVAILABLE SLOTS (DATE-WISE 🔥)
+// Γ£à GET AVAILABLE SLOTS (DATE-WISE ≡ƒöÑ)
 export const getAvailableSlots = async (req, res) => {
   try {
     const { interviewerId, date } = req.query;
@@ -142,7 +209,21 @@ export const getAvailableSlots = async (req, res) => {
         slot.endTime,
         availability.slotDuration
       );
-      allSlots.push(...generated);
+      
+      // Convert time strings to slot objects with startTime and endTime
+      generated.forEach((timeStr, idx) => {
+        const [hours, minutes] = timeStr.split(":").map(Number);
+        const startDate = new Date();
+        startDate.setHours(hours, minutes, 0, 0);
+        
+        const endDate = new Date(startDate);
+        endDate.setMinutes(endDate.getMinutes() + availability.slotDuration);
+        
+        allSlots.push({
+          startTime: timeStr,
+          endTime: endDate.toTimeString().slice(0, 5)
+        });
+      });
     });
 
     const startOfDay = new Date(date);
@@ -151,23 +232,27 @@ export const getAvailableSlots = async (req, res) => {
     const endOfDay = new Date(date);
     endOfDay.setHours(23, 59, 59, 999);
 
-    const bookings = await InterviewSession.find({
+    // ✅ Use BookedSlots instead of InterviewSession to track booked times
+    const bookedSlots = await BookedSlots.find({
       interviewer: interviewerId,
-      scheduledAt: { $gte: startOfDay, $lte: endOfDay },
-      status: { $in: ["pending", "accepted"] }
+      date: { $gte: startOfDay, $lte: endOfDay }
     });
 
-    const bookedTimes = bookings.map(b =>
-      new Date(b.scheduledAt).toTimeString().slice(0, 5)
-    );
+    const bookedStartTimes = bookedSlots.map(bs => bs.startTime);
 
     const availableSlots = allSlots.filter(
-      s => !bookedTimes.includes(s)
+      slot => !bookedStartTimes.includes(slot.startTime)
     );
 
-    res.json(availableSlots);
+    res.json({
+      success: true,
+      data: availableSlots
+    });
 
   } catch (error) {
-    res.status(500).json({ message: "Server error" });
+    res.status(500).json({ 
+      success: false,
+      message: "Server error" 
+    });
   }
 };  

@@ -1,10 +1,33 @@
 import { Formik, Form, Field, ErrorMessage } from "formik";
 import * as Yup from "yup";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import API from "../utils/api";
+import { useEffect, useState } from "react";
 
 const CompleteProfile = () => {
   const navigate = useNavigate();
+  const location = useLocation();
+  const [userRole, setUserRole] = useState("interviewee");
+
+  // Check if user is logged in and redirect if already on dashboard or complete
+  useEffect(() => {
+    const token = localStorage.getItem("token");
+    const user = JSON.parse(localStorage.getItem("user") || "{}");
+    
+    if (!token) {
+      navigate("/login");
+    } else if (user.bio) {
+      // Profile already completed, redirect to dashboard
+      if (user.role === "interviewer") {
+        navigate("/dashboard/2");
+      } else {
+        navigate("/dashboard/1");
+      }
+    } else {
+      // Set role from user data or location state
+      setUserRole(user.role || location.state?.role || "interviewee");
+    }
+  }, [navigate, location]);
 
   const initialValues = {
     isStudent: true,

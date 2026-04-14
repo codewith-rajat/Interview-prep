@@ -1,5 +1,6 @@
 import InterviewSession from "../models/InterviewSessions.js";
 import Availability from "../models/Availability.js";
+import BookedSlots from "../models/BookedSlots.js";
 import User from "../models/User.js";
 import { v4 as uuidv4 } from "uuid";
 import notificationService from "../services/notificationService.js";
@@ -31,29 +32,77 @@ export const createInterview = async (req, res) => {
       return res.status(400).json({ message: "Cannot book past time" });
     }
 
-    // ❌ double booking check
+    // ❌ double booking check - compare by hour and minute
+    const startOfSlot = new Date(interviewTime);
+    startOfSlot.setSeconds(0, 0);
+    
+    const endOfSlot = new Date(startOfSlot);
+    endOfSlot.setMinutes(endOfSlot.getMinutes() + duration);
+
+    console.log(`🔍 Checking for existing interview: ${startOfSlot} to ${endOfSlot}`);
+
     const existing = await InterviewSession.findOne({
       interviewer: interviewerId,
-      scheduledAt: interviewTime
+      scheduledAt: { $gte: startOfSlot, $lt: endOfSlot }
     });
 
     if (existing) {
+      console.log(`❌ Double booking detected! Existing interview:`, existing);
       return res.status(400).json({ message: "Slot already booked" });
     }
 
-    // ✅ create interview
+    console.log(`✅ No conflict found, proceeding with booking`);
+
+    // ✅ create interview with roomId and scheduled status
     const interview = await InterviewSession.create({
       interviewer: interviewerId,
       interviewee: req.user.id,
       scheduledAt: interviewTime,
       duration,
-      status: "pending"
+      status: "scheduled",
+      roomId: uuidv4()
     });
+
+    // ✅ Create a BookedSlots record for this specific date/time
+    const slotTime = `${String(interviewTime.getHours()).padStart(2, "0")}:${String(interviewTime.getMinutes()).padStart(2, "0")}`;
+    const slotEndTime = new Date(interviewTime);
+    slotEndTime.setMinutes(slotEndTime.getMinutes() + duration);
+    const slotEndTimeStr = `${String(slotEndTime.getHours()).padStart(2, "0")}:${String(slotEndTime.getMinutes()).padStart(2, "0")}`;
+    
+    // Create date object at start of day for consistent storage
+    const dateAtStartOfDay = new Date(interviewTime);
+    dateAtStartOfDay.setHours(0, 0, 0, 0);
+
+    console.log(`📍 Creating BookedSlots record: date=${interviewTime.toDateString()}, startTime=${slotTime}, endTime=${slotEndTimeStr}`);
+
+    try {
+      const bookedSlot = await BookedSlots.create({
+        interviewer: interviewerId,
+        date: dateAtStartOfDay,
+        startTime: slotTime,
+        endTime: slotEndTimeStr,
+        interviewSession: interview._id,
+      });
+
+      console.log(`✅ BookedSlots record created:`, bookedSlot._id);
+    } catch (error) {
+      console.error(`❌ Error creating BookedSlots record:`, error.message);
+      // Don't fail the entire booking if BookedSlots fails, but log it
+    }
 
     res.status(201).json(interview);
 
   } catch (error) {
-    console.log("CREATE ERROR:", error);
+    console.error("❌ CREATE ERROR:", error.message);
+    
+    // Handle unique constraint violation (race condition)
+    if (error.code === 11000) {
+      console.warn(`⚠️ Race condition detected! Slot already booked by another user`);
+      return res.status(409).json({ 
+        message: "This slot was just booked by another user. Please try a different slot." 
+      });
+    }
+    
     res.status(500).json({ message: error.message });
   }
 };
@@ -120,31 +169,15 @@ export const respondToInterview = async (req, res) => {
 
     // 🔄 Handle cancellation - free up availability
     if (status === "cancelled") {
-      const scheduleDate = new Date(interview.scheduledAt);
-      const dayOfWeek = scheduleDate.getDay();
-      const slotStartTime = interview.scheduledAt.toLocaleTimeString("en-US", {
-        hour: "2-digit",
-        minute: "2-digit",
-        hour12: false
-      });
-
-      // Find the availability slot and mark as not booked
-      await Availability.updateOne(
-        {
-          interviewer: interview.interviewer,
-          dayOfWeek: dayOfWeek,
-          "slots._id": { $exists: true }
-        },
-        {
-          $set: {
-            "slots.$[elem].isBooked": false,
-            "slots.$[elem].bookedBy": null
-          }
-        },
-        {
-          arrayFilters: [{ "elem.startTime": { $lte: slotStartTime }, "elem.endTime": { $gte: slotStartTime } }]
-        }
-      );
+      try {
+        // Delete the BookedSlots record for this interview
+        const deleteResult = await BookedSlots.deleteOne({
+          interviewSession: interview._id
+        });
+        console.log(`✅ BookedSlots record deleted for cancelled interview:`, deleteResult);
+      } catch (error) {
+        console.error(`❌ Error deleting BookedSlots record:`, error.message);
+      }
     }
 
     await interview.save();
@@ -242,5 +275,88 @@ export const getAllInterviews = async (req, res) => {
 
   } catch (error) {
     res.status(500).json({ message: "Server error" });
+  }
+};
+
+export const getUpcomingInterviews = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const now = new Date();
+
+    console.log(`🔍 Fetching upcoming interviews for user: ${userId}, now: ${now}`);
+
+    // Find upcoming interviews for both interviewer and interviewee
+    const upcomingInterviews = await InterviewSession.find({
+      $or: [
+        { interviewer: userId },
+        { interviewee: userId }
+      ],
+      scheduledAt: { $gte: now },
+      status: { $in: ["pending", "scheduled"] }
+    })
+      .populate("interviewer", "name email title company rating profileImage")
+      .populate("interviewee", "name email profileImage")
+      .sort({ scheduledAt: 1 });
+
+    console.log(`✅ Found ${upcomingInterviews.length} upcoming interviews`);
+    upcomingInterviews.forEach((interview, idx) => {
+      console.log(`  [${idx}] ${interview.scheduledAt} - Status: ${interview.status} - Interviewer: ${interview.interviewer?.name || 'N/A'}`);
+    });
+
+    res.status(200).json({
+      success: true,
+      data: upcomingInterviews,
+      count: upcomingInterviews.length
+    });
+  } catch (error) {
+    console.error(`❌ Error fetching upcoming interviews:`, error);
+    res.status(500).json({
+      success: false,
+      message: "Error fetching upcoming interviews",
+      error: error.message
+    });
+  }
+};
+
+export const getPastInterviews = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    
+    console.log(`🔍 Fetching past interviews for user: ${userId}`);
+
+    // Find all interviews where the user is an interviewee and status is completed
+    const pastInterviews = await InterviewSession.find({
+      interviewee: userId,
+      status: "completed",
+      scheduledAt: { $lt: new Date() }
+    })
+      .populate("interviewer", "name email title company rating profileImage")
+      .sort({ scheduledAt: -1 });
+
+    // Also get interviews where they're an interviewer (past completed ones)
+    const interviewerPastInterviews = await InterviewSession.find({
+      interviewer: userId,
+      status: "completed",
+      scheduledAt: { $lt: new Date() }
+    })
+      .populate("interviewee", "name email profileImage")
+      .sort({ scheduledAt: -1 });
+
+    const allPastInterviews = [...pastInterviews, ...interviewerPastInterviews];
+
+    console.log(`✅ Found ${allPastInterviews.length} past interviews`);
+
+    res.status(200).json({
+      success: true,
+      data: allPastInterviews,
+      count: allPastInterviews.length
+    });
+  } catch (error) {
+    console.error(`❌ Error fetching past interviews:`, error);
+    res.status(500).json({
+      success: false,
+      message: "Error fetching past interviews",
+      error: error.message
+    });
   }
 };

@@ -31,16 +31,31 @@ export default function InterviewRequest() {
 
     const fetchSlots = async () => {
       try {
-        const res = await API.get(`/availability`, {
+        console.log(`🔍 Fetching slots for interviewer: ${user._id}, date: ${selectedDate}`);
+        const res = await API.get(`/availability/slots`, {
           params: {
             interviewerId: user._id,
             date: selectedDate,
           },
         });
 
-        setAllSlots(res.data);
+        console.log(`✅ Response from backend:`, res.data);
+        console.log(`✅ Slots data:`, res.data.data);
+        console.log(`✅ Slots count:`, res.data.data ? res.data.data.length : 0);
+        
+        // Debug: Log each slot
+        if (res.data.data && res.data.data.length > 0) {
+          console.log(`📋 Available slots:`);
+          res.data.data.forEach((slot, idx) => {
+            console.log(`  [${idx}] ${slot.startTime} - ${slot.endTime}`);
+          });
+        }
+        
+        setAllSlots(res.data.data || []);
       } catch (err) {
-        console.log(err);
+        console.error("❌ Error fetching slots:", err.response?.data || err.message);
+        console.error("❌ Full error:", err);
+        setAllSlots([]);
       }
     };
 
@@ -55,13 +70,40 @@ export default function InterviewRequest() {
     );
   }
 
-  const allBookings = JSON.parse(localStorage.getItem("bookings")) || [];
+  // Get current date and time
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  
+  // Parse selectedDate properly to avoid timezone issues - FIX: Parse correctly
+  let selectedDateObj = null;
+  if (selectedDate) {
+    const [year, month, day] = selectedDate.split("-").map(Number);
+    selectedDateObj = new Date(year, month - 1, day); // Create in local timezone
+  }
+  const isToday = selectedDateObj && selectedDateObj.toDateString() === today.toDateString();
 
-  const bookedSlots = allBookings
-    .filter((b) => b.interviewerId === user._id && b.date === selectedDate)
-    .map((b) => b.slot);
+  // Filter out past time slots (for today only)
+  const availableSlots = allSlots
+    .filter((slot) => {
+      // If it's today, exclude past times
+      if (isToday) {
+        const currentHour = now.getHours();
+        const currentMinute = now.getMinutes();
+        const [slotHour, slotMinute] = slot.startTime.split(":").map(Number);
+        const slotTimeInMinutes = slotHour * 60 + slotMinute;
+        const currentTimeInMinutes = currentHour * 60 + currentMinute;
 
-  const slots = allSlots.filter((slot) => !bookedSlots.includes(slot));
+        const shouldInclude = slotTimeInMinutes > currentTimeInMinutes;
+        console.log(`⏰ Slot ${slot.startTime}: current=${currentTimeInMinutes}, slot=${slotTimeInMinutes}, include=${shouldInclude}`);
+        return shouldInclude;
+      }
+      return true;
+    });
+
+  console.log(`📊 Slot filtering: total=${allSlots.length}, isToday=${isToday}, available=${availableSlots.length}`);
+  console.log(`📊 All slots:`, allSlots);
+  console.log(`📊 Available slots after filter:`, availableSlots);
+  console.log(`🕐 Current time: ${now.getHours()}:${String(now.getMinutes()).padStart(2, "0")}, Today: ${isToday}`);
 
   const handleConfirm = async () => {
     if (!selectedSlot || !selectedDate) {
@@ -71,22 +113,39 @@ export default function InterviewRequest() {
 
     try {
       setLoading(true);
-      const interviewDateTime = new Date(`${selectedDate} ${selectedSlot}`);
+      // Combine date and time - FIX: Ensure correct timezone handling
+      const [hours, minutes] = selectedSlot.split(":");
+      const [year, month, day] = selectedDate.split("-").map(Number);
+      const interviewDateTime = new Date(year, month - 1, day, parseInt(hours), parseInt(minutes), 0);
 
-      await API.post("/interviews/create", {
+      await API.post("/interviews", {
         interviewerId: user._id,
         scheduledAt: interviewDateTime,
-        duration: 60,
+        duration: user.sessionDuration || 60,
       });
+
+      console.log(`✅ Interview booked successfully!`);
+
+      // Refetch slots to update UI
+      const res = await API.get(`/availability/slots`, {
+        params: {
+          interviewerId: user._id,
+          date: selectedDate,
+        },
+      });
+      setAllSlots(res.data.data || []);
+      setSelectedSlot(null);
 
       alert(
         `✓ Booked ${user.name} on ${selectedDate} at ${selectedSlot}`
       );
 
-      navigate("/dashboard");
+      setTimeout(() => {
+        navigate("/dashboard/1");
+      }, 1500);
     } catch (err) {
-      console.log(err);
-      alert("Booking failed");
+      console.error(`❌ Booking failed:`, err);
+      alert("Booking failed: " + (err.response?.data?.message || err.message));
     } finally {
       setLoading(false);
     }
@@ -196,38 +255,38 @@ export default function InterviewRequest() {
                   <div className="bg-white/5 border border-white/10 rounded-lg p-8 text-center">
                     <p className="text-stone-400">Please select a date first</p>
                   </div>
-                ) : slots.length === 0 ? (
+                ) : availableSlots.length === 0 ? (
                   <div className="bg-white/5 border border-white/10 rounded-lg p-8 text-center">
                     <p className="text-stone-400">No slots available for this date</p>
+                    <p className="text-xs text-stone-500 mt-2">
+                      Debug: total slots={allSlots.length}, isToday={isToday ? "yes" : "no"}
+                    </p>
                   </div>
                 ) : (
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                    {slots.map((slot) => {
-                      const isBooked = bookedSlots.includes(slot);
+                  <>
+                    <p className="text-xs text-stone-500 mb-2">
+                      Found {availableSlots.length} available slot{availableSlots.length !== 1 ? 's' : ''}
+                    </p>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                      {availableSlots.map((slot, index) => {
+                        const slotTime = slot.startTime;
 
-                      return (
-                        <button
-                          key={slot}
-                          onClick={() => !isBooked && setSelectedSlot(slot)}
-                          disabled={isBooked}
-                          className={`p-3 rounded-xl border transition-all font-semibold ${
-                            isBooked
-                              ? "bg-white/5 text-stone-600 cursor-not-allowed border-white/5"
-                              : selectedSlot === slot
-                              ? "bg-gradient-to-r from-amber-500 to-amber-600 text-black border-amber-500/50"
-                              : "border-white/10 text-stone-300 hover:border-amber-400/50 hover:bg-white/5"
-                          }`}
-                        >
-                          {slot}
-                          {isBooked && (
-                            <span className="block text-xs mt-1 opacity-70">
-                              Booked
-                            </span>
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
+                        return (
+                          <button
+                            key={`${slotTime}-${index}`}
+                            onClick={() => setSelectedSlot(slotTime)}
+                            className={`p-3 rounded-xl border transition-all font-semibold ${
+                              selectedSlot === slotTime
+                                ? "bg-gradient-to-r from-amber-500 to-amber-600 text-black border-amber-500/50"
+                                : "border-white/10 text-stone-300 hover:border-amber-400/50 hover:bg-white/5"
+                            }`}
+                          >
+                            {slotTime}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </>
                 )}
               </div>
 

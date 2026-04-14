@@ -4,7 +4,10 @@ import * as discoveryController from "../controllers/discoveryController.js";
 
 const router = express.Router();
 
-router.get("/interviewers", auth.protect, discoveryController.searchInterviewers);
+// Public endpoint - browse interviewers without auth
+router.get("/interviewers", discoveryController.searchInterviewers);
+
+// Protected endpoint - get interviewer details (for booking)
 router.get("/interviewers/:id", auth.protect, discoveryController.getInterviewerById);
 
 export default router;

@@ -2,15 +2,39 @@ import { Formik, Form, Field, ErrorMessage } from "formik";
 import * as Yup from "yup";
 import { Link, useNavigate } from "react-router-dom";
 import API from "../utils/api";
+import { useEffect, useState } from "react";
 
 const Signup = () => {
   const navigate = useNavigate();
+  const [selectedRole, setSelectedRole] = useState("interviewee");
+
+  // Redirect if already logged in
+  useEffect(() => {
+    const token = localStorage.getItem("token");
+    const user = JSON.parse(localStorage.getItem("user") || "{}");
+    
+    if (token && user.role) {
+      if (user.role === "interviewer") {
+        navigate("/dashboard/2");
+      } else {
+        navigate("/dashboard/1");
+      }
+    }
+  }, [navigate]);
+
+  // Get selected role from sessionStorage
+  useEffect(() => {
+    const role = sessionStorage.getItem("selectedRole");
+    if (role) {
+      setSelectedRole(role);
+    }
+  }, []);
 
   const initialValues = {
     name: "",
     email: "",
     password: "",
-    role: "interviewee"
+    role: selectedRole
   };
 
   const validationSchema = Yup.object({
@@ -24,7 +48,13 @@ const Signup = () => {
     try {
       const res = await API.post("/auth/register", values);
       localStorage.setItem("token", res.data.token);
-      navigate("/complete-profile");
+      
+      // Route based on selected role
+      if (values.role === "interviewer") {
+        navigate("/interviewer-setup");
+      } else {
+        navigate("/complete-profile");
+      }
     } catch (err) {
       alert(err.response?.data?.message || "Signup failed");
     }
@@ -98,22 +128,7 @@ const Signup = () => {
               </div>
 
               {/* Role */}
-              <div className="flex flex-col gap-2">
-                <label className="text-xs font-medium text-gray-400">I am a...</label>
-                <Field
-                  as="select"
-                  name="role"
-                  className="w-full px-4 py-2.5 bg-[#0a0a0b] border border-white/10 rounded-lg text-white focus:outline-none focus:border-amber-500 transition"
-                >
-                  <option value="interviewee">Interviewee (taking interviews)</option>
-                  <option value="interviewer">Interviewer (conducting interviews)</option>
-                </Field>
-                <ErrorMessage
-                  name="role"
-                  component="p"
-                  className="text-red-500 text-xs"
-                />
-              </div>
+              <input type="hidden" name="role" value={selectedRole} />
 
               {/* Button */}
               <button

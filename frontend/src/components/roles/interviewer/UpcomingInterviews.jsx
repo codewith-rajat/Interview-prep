@@ -4,7 +4,7 @@ import API from "../../utils/api";
 import { useToast } from "../../ui/Toast";
 import { SkeletonLoader } from "../../ui/Loaders";
 import { EmptyState } from "../../ui/EmptyState";
-import { Clock, Phone, MapPin, User } from "lucide-react";
+import { Clock, Phone, MapPin, User, X } from "lucide-react";
 
 export default function UpcomingInterviews() {
   const [bookings, setBookings] = useState([]);
@@ -17,14 +17,17 @@ export default function UpcomingInterviews() {
     const fetchBookings = async () => {
       try {
         setIsLoading(true);
-        const res = await API.get("/interviews/my");
+        const res = await API.get("/interviews/upcoming");
 
-        // ✅ upcoming filter - only accepted status
+        console.log(`📥 Fetched interviews:`, res.data.data);
+
+        // ✅ upcoming filter - only scheduled/accepted status and future dates
         const now = new Date();
-        const upcoming = res.data.filter(
-          (b) => new Date(b.scheduledAt) >= now && b.status === "accepted"
+        const upcoming = res.data.data.filter(
+          (b) => new Date(b.scheduledAt) >= now && (b.status === "scheduled" || b.status === "accepted")
         );
 
+        console.log(`✅ Filtered to ${upcoming.length} upcoming interviews`);
         setBookings(upcoming);
       } catch (error) {
         showToast("Failed to load interviews", "error");
@@ -70,6 +73,38 @@ export default function UpcomingInterviews() {
     if (hours >= 24) return `${days}d left`;
     if (minutes >= 60) return `${hours}h left`;
     return `${minutes}m left`;
+  };
+
+  // ✅ Check if user can join (5 mins before to 1 hour after)
+  const isJoinEnabled = (time) => {
+    const now = new Date();
+    const interviewTime = new Date(time);
+    const diff = interviewTime - now;
+
+    return diff <= 5 * 60 * 1000 && diff >= -60 * 60 * 1000;
+  };
+
+  // ✅ Handle cancel interview
+  const handleCancel = async (id) => {
+    const confirm = window.confirm("Are you sure you want to cancel this interview?");
+    if (!confirm) return;
+
+    try {
+      await API.patch(`/interviews/${id}/respond`, { status: "cancelled" });
+      
+      showToast("Interview cancelled successfully", "success");
+
+      // Refetch interviews
+      const interviews = await API.get("/interviews/upcoming");
+      const now = new Date();
+      const upcoming = interviews.data.data.filter(
+        (b) => new Date(b.scheduledAt) >= now && (b.status === "scheduled" || b.status === "accepted")
+      );
+      setBookings(upcoming);
+    } catch (err) {
+      showToast(err.response?.data?.message || "Failed to cancel interview", "error");
+      console.error(err);
+    }
   };
 
   return (
@@ -161,20 +196,35 @@ export default function UpcomingInterviews() {
                   </div>
                 </div>
 
-                {/* ACTION BUTTON */}
-                <button
-                  onClick={() => {
-                    if (booking.roomId) {
-                      navigate(`/video-call/${booking.roomId}`);
-                    } else {
-                      showToast("Room ID not available", "warning");
-                    }
-                  }}
-                  className="w-full sm:w-auto px-6 py-3 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-black font-semibold rounded-xl transition-all duration-200 transform hover:scale-105 flex items-center justify-center gap-2 shadow-lg"
-                >
-                  <Phone size={18} />
-                  Join Call
-                </button>
+                {/* ACTION BUTTONS */}
+                <div className="flex gap-2 sm:gap-3 w-full sm:w-auto">
+                  <button
+                    onClick={() => {
+                      if (booking.roomId) {
+                        navigate(`/join/${booking.roomId}`);
+                      } else {
+                        showToast("Room not initialized", "warning");
+                      }
+                    }}
+                    disabled={!isJoinEnabled(booking.scheduledAt)}
+                    className={`flex-1 sm:flex-none px-6 py-3 rounded-xl font-semibold transition-all duration-200 flex items-center justify-center gap-2 ${
+                      isJoinEnabled(booking.scheduledAt)
+                        ? "bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-black transform hover:scale-105 shadow-lg"
+                        : "bg-white/5 text-stone-500 cursor-not-allowed border border-white/10"
+                    }`}
+                  >
+                    <Phone size={18} />
+                    Join
+                  </button>
+
+                  <button
+                    onClick={() => handleCancel(booking._id)}
+                    className="flex-1 sm:flex-none px-4 py-3 bg-red-500/10 hover:bg-red-500/20 text-red-400 font-semibold rounded-xl transition-all border border-red-500/30 flex items-center justify-center gap-2"
+                  >
+                    <X size={18} />
+                    Cancel
+                  </button>
+                </div>
               </div>
             );
           })}

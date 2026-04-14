@@ -31,6 +31,8 @@ const userSchema = new mongoose.Schema(
     company: String,
     yearsExp: Number,
     categories: {type: [String],default: []}, // e.g., ["FRONTEND", "BACKEND"]
+    expertise: {type: [String],default: []}, // New: ["Frontend", "Backend", "System Design"]
+    reviewCount: {type: Number, default: 0}, // Number of reviews/sessions
     
     // ===== Payment Methods =====
     paymentMethods: [{

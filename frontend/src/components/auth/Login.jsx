@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { useFormik } from "formik";
 import * as Yup from "yup";
 import API from "../utils/api";
@@ -6,6 +6,20 @@ import { Link, useNavigate } from "react-router-dom";
 
 export default function Login() {
   const navigate = useNavigate();
+
+  // Redirect if already logged in
+  useEffect(() => {
+    const token = localStorage.getItem("token");
+    const user = JSON.parse(localStorage.getItem("user") || "{}");
+    
+    if (token && user.role) {
+      if (user.role === "interviewer") {
+        navigate("/dashboard/2");
+      } else {
+        navigate("/dashboard/1");
+      }
+    }
+  }, [navigate]);
 
   const formik = useFormik({
     initialValues: {

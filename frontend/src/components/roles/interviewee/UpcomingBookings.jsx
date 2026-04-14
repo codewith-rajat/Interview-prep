@@ -17,16 +17,19 @@ export default function UpcomingBookings() {
     const fetchBookings = async () => {
       try {
         setIsLoading(true);
-        const res = await API.get("/interviews/my");
+        const res = await API.get("/interviews/upcoming");
 
-        const filtered = res.data.filter(
-          (b) => b.status === "pending" || b.status === "accepted"
+        console.log(`📥 Fetched bookings:`, res.data.data);
+
+        const filtered = res.data.data.filter(
+          (b) => (b.status === "pending" || b.status === "scheduled") && new Date(b.scheduledAt) >= new Date()
         );
 
         const sorted = filtered.sort(
           (a, b) => new Date(a.scheduledAt) - new Date(b.scheduledAt)
         );
 
+        console.log(`✅ Filtered to ${sorted.length} upcoming bookings`);
         setBookings(sorted);
       } catch (err) {
         showToast("Failed to load interviews", "error");
@@ -71,11 +74,17 @@ export default function UpcomingBookings() {
     }
   };
 
-  const isJoinEnabled = (time) => {
+  const isJoinEnabled = (time, status) => {
+    // Can only join if status is accepted or scheduled
+    if (status !== "accepted" && status !== "scheduled") {
+      return false;
+    }
+
     const now = new Date();
     const interviewTime = new Date(time);
     const diff = interviewTime - now;
 
+    // Allow join 5 minutes before to 1 hour after interview
     return diff <= 5 * 60 * 1000 && diff >= -60 * 60 * 1000;
   };
 
@@ -107,7 +116,7 @@ export default function UpcomingBookings() {
 
   const handleJoin = (booking) => {
     if (booking.roomId) {
-      navigate(`/video-call/${booking.roomId}`);
+      navigate(`/join/${booking.roomId}`);
     } else {
       showToast("Interview has not been accepted yet", "warning");
     }
@@ -219,9 +228,9 @@ export default function UpcomingBookings() {
                 <div className="flex gap-3 w-full sm:w-auto">
                   <button
                     onClick={() => handleJoin(booking)}
-                    disabled={!isJoinEnabled(booking.scheduledAt)}
+                    disabled={!isJoinEnabled(booking.scheduledAt, booking.status)}
                     className={`flex-1 sm:flex-none px-6 py-3 rounded-xl font-semibold transition-all duration-200 flex items-center justify-center gap-2 ${
-                      isJoinEnabled(booking.scheduledAt)
+                      isJoinEnabled(booking.scheduledAt, booking.status)
                         ? "bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-black transform hover:scale-105 shadow-lg"
                         : "bg-white/5 text-stone-500 cursor-not-allowed border border-white/10"
                     }`}

@@ -28,6 +28,28 @@ export const searchInterviewers = async (req, res) => {
       }
     }
 
+    // Handle expertise array search for newer profiles
+    if(skill) {
+      query.$or = [
+        {
+          skills: {
+            $elemMatch: {
+              $regex: skill,
+              $options: "i"
+            }
+          }
+        },
+        {
+          expertise: {
+            $elemMatch: {
+              $regex: skill,
+              $options: "i"
+            }
+          }
+        }
+      ];
+      delete query.skills; // Remove the old skills query if $or is used
+    }
 
     const skip = (Number(page) - 1) * Number(limit);
 

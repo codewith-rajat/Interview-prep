@@ -16,8 +16,8 @@ export default function InterviewerDashboard() {
         const storedUser = JSON.parse(localStorage.getItem("user"));
         setUser(storedUser);
 
-        const res = await API.get("/interviews/my");
-        setBookings(res.data || []);
+        const res = await API.get("/interviews/upcoming");
+        setBookings(res.data.data || []);
       } catch (error) {
         console.error("Error fetching interviews:", error);
       } finally {

@@ -1,287 +1,125 @@
-import React, { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import API from "../../utils/api";
-import { useToast } from "../../ui/Toast";
-import { SkeletonLoader } from "../../ui/Loaders";
-import { Calendar, Clock, MessageSquare, Send, X, Briefcase } from "lucide-react";
+import React, { useState, useEffect } from "react";
+import axios from "axios";
+import { Calendar, Clock, User, Star, MessageSquare } from "lucide-react";
 
-export default function PastInterviews() {
-  const [pastBookings, setPastBookings] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [feedbackId, setFeedbackId] = useState(null);
-  const [feedbackText, setFeedbackText] = useState("");
-  const [rating, setRating] = useState(5);
-  const navigate = useNavigate();
-  const { showToast } = useToast();
+const PastInterviews = () => {
+  const [pastInterviews, setPastInterviews] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
-    const fetchPastInterviews = async () => {
-      try {
-        setIsLoading(true);
-        const res = await API.get("/interviews/my");
-
-        const now = new Date();
-
-        const past = res.data.filter(
-          (b) => new Date(b.scheduledAt) < now && b.status === "completed"
-        );
-
-        const sorted = past.sort(
-          (a, b) => new Date(b.scheduledAt) - new Date(a.scheduledAt)
-        );
-
-        setPastBookings(sorted);
-      } catch (error) {
-        showToast("Failed to load past interviews", "error");
-        console.error("Error fetching past interviews:", error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
     fetchPastInterviews();
   }, []);
 
-  const handleSubmitFeedback = async (id) => {
-    if (!feedbackText.trim()) {
-      showToast("Feedback cannot be empty", "warning");
-      return;
-    }
-
+  const fetchPastInterviews = async () => {
     try {
-      await API.post("/meeting/submit-feedback", {
-        interviewId: id,
-        feedback: feedbackText,
-        rating: rating,
+      const token = localStorage.getItem("token");
+      const response = await axios.get("/api/interviews/past", {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
       });
-
-      const updated = pastBookings.map((b) =>
-        b._id === id ? { ...b, feedback: feedbackText, rating: rating } : b
-      );
-
-      setPastBookings(updated);
-      setFeedbackId(null);
-      setFeedbackText("");
-      setRating(5);
-      showToast("Feedback submitted successfully", "success");
+      setPastInterviews(response.data.data || []);
+      setLoading(false);
     } catch (error) {
-      showToast("Error submitting feedback", "error");
-      console.error("Error submitting feedback:", error);
+      console.error("Error fetching past interviews:", error);
+      setError("Failed to load past interviews");
+      setLoading(false);
     }
   };
 
-  if (isLoading) {
+  if (loading) {
     return (
-      <div className="mb-12">
-        <h2 className="text-2xl font-serif font-bold text-stone-100 mb-8">
-          Past Interviews
-        </h2>
-        <SkeletonLoader count={3} />
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-amber-400"></div>
       </div>
     );
   }
 
-  if (!isLoading && pastBookings.length === 0) {
+  if (error) {
     return (
-      <div className="mb-12">
-        <h2 className="text-2xl font-serif font-bold text-stone-100 mb-8">
-          Past Interviews
-        </h2>
-        <div className="bg-[#0f0f11] border border-white/10 rounded-2xl p-12 text-center">
-          <p className="text-stone-400 mb-2">📭 No Past Interviews</p>
-          <p className="text-stone-500 text-sm">
-            You haven't completed any interviews yet
-          </p>
-        </div>
+      <div className="bg-red-500/10 border border-red-500/30 text-red-400 p-4 rounded-lg">
+        {error}
+      </div>
+    );
+  }
+
+  if (pastInterviews.length === 0) {
+    return (
+      <div className="text-center py-12">
+        <p className="text-gray-400 text-lg">No past interviews yet</p>
       </div>
     );
   }
 
   return (
-    <div className="mb-12">
-      {/* SECTION HEADER */}
-      <div className="mb-8">
-        <h2 className="text-2xl font-serif font-bold text-stone-100 mb-2">
-          Past Interviews ({pastBookings.length})
-        </h2>
-        <p className="text-stone-400 text-sm">
-          Your completed interview sessions and feedback
-        </p>
-      </div>
-
-      {/* INTERVIEWS GRID */}
-      <div className="grid gap-4">
-        {pastBookings.map((booking) => (
-          <div
-            key={booking._id}
-            className="bg-[#0f0f11] border border-white/10 hover:border-amber-400/30 rounded-2xl p-6 transition-all duration-200"
-          >
-            {/* HEADER */}
-            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-6 pb-6 border-b border-white/10">
-              <div className="flex-1">
-                <h3 className="text-lg font-semibold text-stone-100 mb-1">
-                  {booking.interviewer?.name || "N/A"}
-                </h3>
-                <div className="flex items-center gap-2 text-sm text-stone-400 mb-3">
-                  <Briefcase size={16} className="text-amber-400" />
-                  <span>{booking.interviewer?.workingAt || "N/A"}</span>
-                </div>
-
-                {/* DETAILS */}
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
-                  <div className="flex items-center gap-2 text-stone-400">
-                    <Clock size={16} className="text-amber-400" />
-                    <span>{booking.duration} mins</span>
-                  </div>
-                  <div className="flex items-center gap-2 text-stone-400">
-                    <Calendar size={16} className="text-amber-400" />
-                    <span>
-                      {new Date(booking.scheduledAt).toLocaleDateString("en-US", {
-                        month: "short",
-                        day: "numeric",
-                      })}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2 text-stone-400">
-                    <span className="text-amber-400">🕐</span>
-                    <span>
-                      {new Date(booking.scheduledAt).toLocaleTimeString([], {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
-                    </span>
-                  </div>
-                </div>
+    <div className="space-y-4">
+      <h2 className="text-2xl font-bold text-white mb-6">Past Interviews</h2>
+      {pastInterviews.map((interview) => (
+        <div
+          key={interview._id}
+          className="bg-[#0f0f11] border border-amber-400/20 rounded-lg p-6 hover:border-amber-400/40 transition"
+        >
+          <div className="flex items-start justify-between mb-4">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-full bg-amber-400/10 flex items-center justify-center">
+                <User className="text-amber-400" size={24} />
               </div>
-
-              {/* STATUS & RATING */}
-              <div className="flex flex-col gap-2">
-                <span className="px-3 py-1 text-xs font-semibold rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/30 text-center">
-                  ✓ Completed
-                </span>
-                {booking.rating && (
-                  <div className="text-center">
-                    <div className="flex justify-center gap-0.5 mb-1">
-                      {[1, 2, 3, 4, 5].map((star) => (
-                        <span
-                          key={star}
-                          className={
-                            star <= booking.rating
-                              ? "text-amber-400"
-                              : "text-stone-600"
-                          }
-                        >
-                          ⭐
-                        </span>
-                      ))}
-                    </div>
-                    <p className="text-xs text-stone-400">
-                      {booking.rating}/5
-                    </p>
-                  </div>
-                )}
+              <div>
+                <h3 className="text-white font-semibold">
+                  {interview.interviewerId?.name || "Interviewer"}
+                </h3>
+                <p className="text-gray-400 text-sm">
+                  {interview.interviewerId?.title || "Professional"}
+                </p>
               </div>
             </div>
+            {interview.feedbackId?.rating && (
+              <div className="flex items-center gap-1">
+                <Star className="text-amber-400 fill-amber-400" size={18} />
+                <span className="text-white font-semibold">
+                  {interview.feedbackId.rating}
+                </span>
+              </div>
+            )}
+          </div>
 
-            {/* FEEDBACK SECTION */}
-            <div>
-              {booking.feedback ? (
-                <div className="bg-white/5 border border-white/10 rounded-xl p-5">
-                  <div className="flex items-start gap-2 mb-3">
-                    <MessageSquare size={16} className="text-amber-400 mt-0.5" />
-                    <p className="text-sm font-semibold text-stone-100">Your Feedback</p>
-                  </div>
-                  <p className="text-stone-400 text-sm mb-3">{booking.feedback}</p>
-                  {booking.rating && (
-                    <div className="flex gap-0.5">
-                      {[1, 2, 3, 4, 5].map((star) => (
-                        <span
-                          key={star}
-                          className={
-                            star <= booking.rating
-                              ? "text-amber-400"
-                              : "text-stone-600"
-                          }
-                        >
-                          ⭐
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ) : feedbackId === booking._id ? (
-                <div className="bg-white/5 border border-white/10 rounded-xl p-5 space-y-4">
-                  {/* TEXTAREA */}
-                  <div>
-                    <label className="text-sm font-semibold text-stone-100 mb-2 block">
-                      Your Feedback
-                    </label>
-                    <textarea
-                      value={feedbackText}
-                      onChange={(e) => setFeedbackText(e.target.value)}
-                      placeholder="Share your experience with this interview..."
-                      className="w-full bg-white/5 border border-white/10 text-stone-100 placeholder-stone-500 rounded-lg p-3 focus:border-amber-400/50 focus:outline-none focus:ring-2 focus:ring-amber-400/10 transition-all resize-none"
-                      rows="3"
-                    />
-                  </div>
-
-                  {/* RATING */}
-                  <div>
-                    <label className="text-sm font-semibold text-stone-100 mb-2 block">
-                      Rating
-                    </label>
-                    <div className="flex gap-2">
-                      {[1, 2, 3, 4, 5].map((star) => (
-                        <button
-                          key={star}
-                          onClick={() => setRating(star)}
-                          className={`text-2xl transition-all transform ${
-                            star <= rating
-                              ? "scale-125 text-amber-400"
-                              : "scale-100 text-stone-600 hover:text-amber-300"
-                          }`}
-                        >
-                          ⭐
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* BUTTONS */}
-                  <div className="flex gap-3">
-                    <button
-                      onClick={() => handleSubmitFeedback(booking._id)}
-                      className="flex-1 px-4 py-2.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-black font-semibold rounded-lg transition-all flex items-center justify-center gap-2"
-                    >
-                      <Send size={16} />
-                      Submit
-                    </button>
-                    <button
-                      onClick={() => {
-                        setFeedbackId(null);
-                        setFeedbackText("");
-                        setRating(5);
-                      }}
-                      className="flex-1 px-4 py-2.5 bg-white/5 hover:bg-white/10 text-stone-300 font-semibold rounded-lg transition-all border border-white/10 flex items-center justify-center gap-2"
-                    >
-                      <X size={16} />
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <button
-                  onClick={() => setFeedbackId(booking._id)}
-                  className="w-full px-4 py-2.5 bg-gradient-to-r from-amber-500/20 to-amber-600/20 hover:from-amber-500/30 hover:to-amber-600/30 text-amber-400 font-semibold rounded-lg transition-all border border-amber-500/30 flex items-center justify-center gap-2"
-                >
-                  <MessageSquare size={16} />
-                  Add Feedback
-                </button>
-              )}
+          <div className="space-y-2 text-sm text-gray-400 mb-4">
+            <div className="flex items-center gap-2">
+              <Calendar size={16} className="text-amber-400" />
+              <span>
+                {new Date(interview.scheduledDate).toLocaleDateString()}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Clock size={16} className="text-amber-400" />
+              <span>
+                {new Date(interview.scheduledDate).toLocaleTimeString()}
+              </span>
             </div>
           </div>
-        ))}
-      </div>
+
+          {interview.feedbackId?.summary && (
+            <div className="bg-amber-400/5 border border-amber-400/20 rounded p-3 mb-4">
+              <div className="flex items-start gap-2">
+                <MessageSquare size={16} className="text-amber-400 mt-1 flex-shrink-0" />
+                <p className="text-gray-300 text-sm">{interview.feedbackId.summary}</p>
+              </div>
+            </div>
+          )}
+
+          <div className="flex gap-3">
+            <button className="flex-1 bg-amber-400/10 hover:bg-amber-400/20 text-amber-400 border border-amber-400/30 rounded py-2 px-4 transition text-sm font-semibold">
+              View Feedback
+            </button>
+            <button className="flex-1 bg-amber-400 hover:bg-amber-500 text-black rounded py-2 px-4 transition text-sm font-semibold">
+              Book Again
+            </button>
+          </div>
+        </div>
+      ))}
     </div>
   );
-}
+};
+
+export default PastInterviews;
