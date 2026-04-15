@@ -17,12 +17,19 @@ export default function UpcomingBookings() {
     const fetchBookings = async () => {
       try {
         setIsLoading(true);
+        
+        // Debug call
+        const debugRes = await API.get("/interviews/debug/check");
+        console.log(`🔍 DEBUG INFO:`, debugRes.data);
+        
         const res = await API.get("/interviews/upcoming");
 
         console.log(`📥 Fetched bookings:`, res.data.data);
 
+        // ⚠️ NO NEED TO FILTER - Backend already returns duration-aware upcoming interviews
+        // Backend only returns interviews where scheduledAt + duration >= now
         const filtered = res.data.data.filter(
-          (b) => (b.status === "pending" || b.status === "scheduled") && new Date(b.scheduledAt) >= new Date()
+          (b) => b.status === "pending" || b.status === "scheduled"
         );
 
         const sorted = filtered.sort(

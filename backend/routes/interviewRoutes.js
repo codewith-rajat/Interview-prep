@@ -5,7 +5,8 @@ import {
   getUpcomingInterviews,
   respondToInterview,
   completeInterview,
-  getPastInterviews
+  getPastInterviews,
+  debugInterview
 } from "../controllers/interviewController.js";
 import auth from "../middlewares/auth.js";
 
@@ -15,6 +16,7 @@ router.post("/", auth.protect, createInterview);
 router.get("/", auth.protect, getAllInterviews);
 router.get("/upcoming", auth.protect, getUpcomingInterviews);
 router.get("/past", auth.protect, getPastInterviews);
+router.get("/debug/check", auth.protect, debugInterview);
 router.patch("/:id/respond", auth.protect, respondToInterview);
 router.patch("/:id/complete", auth.protect, completeInterview);
 

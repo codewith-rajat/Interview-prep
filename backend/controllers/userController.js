@@ -117,3 +117,35 @@ export const getMyProfile = async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 };
+
+/*
+=====================================
+UPDATE SESSION DURATION (Interviewer)
+=====================================
+*/
+
+export const updateSessionDuration = async (req, res) => {
+  try {
+    const { sessionDuration } = req.body;
+
+    if (!sessionDuration || sessionDuration < 15 || sessionDuration > 180) {
+      return res.status(400).json({ 
+        message: "Session duration must be between 15 and 180 minutes" 
+      });
+    }
+
+    const user = await User.findByIdAndUpdate(
+      req.user.id,
+      { sessionDuration },
+      { new: true }
+    ).select("-password");
+
+    res.json({
+      message: "Session duration updated",
+      sessionDuration: user.sessionDuration
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Server error" });
+  }
+};

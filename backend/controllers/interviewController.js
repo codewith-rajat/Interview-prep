@@ -289,13 +289,22 @@ export const getUpcomingInterviews = async (req, res) => {
     console.log(`🔍 Fetching upcoming interviews for user: ${userId}, now: ${now}`);
 
     // Find upcoming interviews for both interviewer and interviewee
+    // Interview should be "upcoming" as long as it hasn't ended yet
+    // End time = scheduledAt + duration (in minutes)
     const upcomingInterviews = await InterviewSession.find({
       $or: [
         { interviewer: userId },
         { interviewee: userId }
       ],
-      scheduledAt: { $gte: now },
-      status: { $in: ["pending", "scheduled"] }
+      status: { $in: ["pending", "scheduled"] },
+      // Show interview if it hasn't ended yet
+      // endTime = scheduledAt + (duration * 60000 milliseconds)
+      $expr: {
+        $gte: [
+          { $add: ["$scheduledAt", { $multiply: ["$duration", 60000] }] },
+          now
+        ]
+      }
     })
       .populate("interviewer", "name email title company rating profileImage")
       .populate("interviewee", "name email profileImage")
@@ -303,7 +312,8 @@ export const getUpcomingInterviews = async (req, res) => {
 
     console.log(`✅ Found ${upcomingInterviews.length} upcoming interviews`);
     upcomingInterviews.forEach((interview, idx) => {
-      console.log(`  [${idx}] ${interview.scheduledAt} - Status: ${interview.status} - Interviewer: ${interview.interviewer?.name || 'N/A'}`);
+      const endTime = new Date(interview.scheduledAt.getTime() + interview.duration * 60000);
+      console.log(`  [${idx}] ${interview.scheduledAt} to ${endTime} - Status: ${interview.status} - Interviewer: ${interview.interviewer?.name || 'N/A'}`);
     });
 
     res.status(200).json({
@@ -321,17 +331,59 @@ export const getUpcomingInterviews = async (req, res) => {
   }
 };
 
+// 🔍 DEBUG: Check specific interview
+export const debugInterview = async (req, res) => {
+  try {
+    // Find interview at 1:15 on April 15, 2026
+    const startOfDay = new Date(2026, 3, 15, 0, 0, 0, 0); // April 15
+    const endOfDay = new Date(2026, 3, 16, 0, 0, 0, 0);
+    
+    const interviews = await InterviewSession.find({
+      scheduledAt: { $gte: startOfDay, $lt: endOfDay }
+    })
+      .populate("interviewer", "name")
+      .populate("interviewee", "name")
+      .select("scheduledAt duration status interviewer interviewee");
+    
+    const now = new Date();
+    console.log(`\n🔍 DEBUG TIME: ${now}\n`);
+    interviews.forEach(iv => {
+      const endTime = new Date(iv.scheduledAt.getTime() + iv.duration * 60000);
+      const isUpcoming = endTime >= now && (iv.status === "pending" || iv.status === "scheduled");
+      console.log(`  ${iv.scheduledAt} → ${endTime} (${iv.duration} mins) | Status: ${iv.status} | Upcoming: ${isUpcoming}`);
+    });
+    
+    res.json({ now, interviews });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
 export const getPastInterviews = async (req, res) => {
   try {
     const userId = req.user.id;
+    const now = new Date();
     
     console.log(`🔍 Fetching past interviews for user: ${userId}`);
 
-    // Find all interviews where the user is an interviewee and status is completed
+    // Find all interviews where the user is an interviewee and either:
+    // 1. Status is completed, OR
+    // 2. Status is scheduled/accepted but end time has passed
     const pastInterviews = await InterviewSession.find({
       interviewee: userId,
-      status: "completed",
-      scheduledAt: { $lt: new Date() }
+      $or: [
+        { status: "completed" },
+        {
+          status: { $in: ["pending", "scheduled", "accepted"] },
+          // End time has passed
+          $expr: {
+            $lt: [
+              { $add: ["$scheduledAt", { $multiply: ["$duration", 60000] }] },
+              now
+            ]
+          }
+        }
+      ]
     })
       .populate("interviewer", "name email title company rating profileImage")
       .sort({ scheduledAt: -1 });
@@ -339,8 +391,19 @@ export const getPastInterviews = async (req, res) => {
     // Also get interviews where they're an interviewer (past completed ones)
     const interviewerPastInterviews = await InterviewSession.find({
       interviewer: userId,
-      status: "completed",
-      scheduledAt: { $lt: new Date() }
+      $or: [
+        { status: "completed" },
+        {
+          status: { $in: ["pending", "scheduled", "accepted"] },
+          // End time has passed
+          $expr: {
+            $lt: [
+              { $add: ["$scheduledAt", { $multiply: ["$duration", 60000] }] },
+              now
+            ]
+          }
+        }
+      ]
     })
       .populate("interviewee", "name email profileImage")
       .sort({ scheduledAt: -1 });

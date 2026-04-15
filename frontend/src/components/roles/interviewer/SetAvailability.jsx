@@ -240,6 +240,21 @@ const SetAvailability = () => {
             <span className="text-gray-400">
               (Each slot will be exactly {duration} minutes)
             </span>
+            <button
+              onClick={async () => {
+                try {
+                  await API.patch("/user/session-duration", { sessionDuration: duration });
+                  setMessage("✅ Session duration saved!");
+                  setTimeout(() => setMessage(""), 3000);
+                } catch (err) {
+                  setMessage("❌ Failed to save duration");
+                  console.error(err);
+                }
+              }}
+              className="ml-auto px-4 py-2 bg-amber-400 text-black font-semibold rounded hover:bg-amber-500 transition"
+            >
+              Save Duration
+            </button>
           </div>
 
           <p className="text-xs text-gray-500">

@@ -33,6 +33,7 @@ const userSchema = new mongoose.Schema(
     categories: {type: [String],default: []}, // e.g., ["FRONTEND", "BACKEND"]
     expertise: {type: [String],default: []}, // New: ["Frontend", "Backend", "System Design"]
     reviewCount: {type: Number, default: 0}, // Number of reviews/sessions
+    sessionDuration: {type: Number, default: 60}, // Interview duration in minutes (default 60)
     
     // ===== Payment Methods =====
     paymentMethods: [{

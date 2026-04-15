@@ -6,5 +6,6 @@ const router = express.Router();
 
 router.get("/me", auth.protect, userController.getMyProfile);
 router.patch("/update-profile", auth.protect, userController.updateProfile);
+router.patch("/session-duration", auth.protect, userController.updateSessionDuration);
 
 export default router;

@@ -17,17 +17,21 @@ const VideoCall = () => {
   const [isAudioOn, setIsAudioOn] = useState(true);
   const [isVideoOn, setIsVideoOn] = useState(true);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
+  const [isRemoteScreenSharing, setIsRemoteScreenSharing] = useState(false);
   const [isRemoteConnected, setIsRemoteConnected] = useState(false);
   const [callDuration, setCallDuration] = useState(0);
   const [connectionQuality, setConnectionQuality] = useState("good");
   const [localParticipant, setLocalParticipant] = useState(null);
   const [remoteParticipant, setRemoteParticipant] = useState(null);
+  const [currentUserId, setCurrentUserId] = useState(null);
+  const [socketId, setSocketId] = useState(null);
   
   // Chat states
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [messages, setMessages] = useState([]);
   const [chatInput, setChatInput] = useState("");
   const [unreadCount, setUnreadCount] = useState(0);
+  const [pendingMessages, setPendingMessages] = useState([]); // Messages before socketId is set
   const chatEndRef = useRef();
 
   // ⏱️ Call duration timer
@@ -77,7 +81,54 @@ const VideoCall = () => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  // Get current user ID
   useEffect(() => {
+    const fetchCurrentUser = async () => {
+      try {
+        const token = localStorage.getItem("token");
+        const response = await fetch("http://localhost:5001/api/user/me", {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+        const data = await response.json();
+        setCurrentUserId(data._id);
+      } catch (error) {
+        console.error("Error fetching current user:", error);
+      }
+    };
+    fetchCurrentUser();
+  }, []);
+
+  // 🔑 Process pending messages once socketId is available
+  useEffect(() => {
+    if (socketId && pendingMessages.length > 0) {
+      console.log(`🔑 Processing ${pendingMessages.length} pending messages with socketId: ${socketId}`);
+      pendingMessages.forEach((msg) => {
+        const isCurrentUserMessage = msg.socketId === socketId;
+        console.log(`💬 Pending message - socketId: ${msg.socketId}, isCurrentUser: ${isCurrentUserMessage}`);
+        setMessages((prev) => [...prev, { ...msg, isCurrentUser: isCurrentUserMessage }]);
+      });
+      setPendingMessages([]);
+    }
+  }, [socketId, pendingMessages]);
+
+  useEffect(() => {
+    // ⚡ CRITICAL: Set socketId IMMEDIATELY on connection
+    const setSocketIdImmediately = () => {
+      setSocketId(socket.id);
+      console.log(`🔌 Socket ID set: ${socket.id}`);
+    };
+
+    // If already connected, set immediately
+    if (socket.connected) {
+      setSocketIdImmediately();
+    }
+
+    // Also listen for connect event
+    socket.on("connect", setSocketIdImmediately);
+
+    // Now emit join-room after socketId is set
     socket.emit("join-room", roomId);
 
     socket.on("offer", handleReceiveOffer);
@@ -85,6 +136,20 @@ const VideoCall = () => {
     socket.on("ice-candidate", handleNewICE);
     socket.on("user-disconnected", handleUserDisconnected);
     socket.on("chat-message", handleChatMessage);
+    socket.on("user-mute", (data) => {
+      console.log(`🔇 Remote user ${data.socketId} muted: ${data.muted}`);
+    });
+    socket.on("user-video", (data) => {
+      console.log(`📹 Remote user ${data.socketId} video: ${data.videoOn}`);
+    });
+    socket.on("screen-share-started", () => {
+      console.log("📺 Remote user started screen sharing");
+      setIsRemoteScreenSharing(true);
+    });
+    socket.on("screen-share-stopped", () => {
+      console.log("📺 Remote user stopped screen sharing");
+      setIsRemoteScreenSharing(false);
+    });
 
     return () => {
       socket.off("offer");
@@ -92,6 +157,11 @@ const VideoCall = () => {
       socket.off("ice-candidate");
       socket.off("user-disconnected");
       socket.off("chat-message");
+      socket.off("user-mute");
+      socket.off("user-video");
+      socket.off("screen-share-started");
+      socket.off("screen-share-stopped");
+      socket.off("connect", setSocketIdImmediately);
     };
   }, []);
 
@@ -228,22 +298,76 @@ const VideoCall = () => {
 
   // 🎙️ Toggle audio
   const toggleAudio = () => {
-    if (streamRef.current) {
-      streamRef.current.getAudioTracks().forEach((track) => {
-        track.enabled = !track.enabled;
-      });
-      setIsAudioOn(!isAudioOn);
+    console.log(`🎙️ [MUTE] Button clicked - Current state: isAudioOn=${isAudioOn}`);
+    
+    if (!streamRef.current) {
+      console.error("❌ [MUTE] No stream available!");
+      alert("No audio stream available. Start call first.");
+      return;
     }
+    
+    const audioTracks = streamRef.current.getAudioTracks();
+    console.log(`🎙️ [MUTE] Found ${audioTracks.length} audio tracks`);
+    
+    if (audioTracks.length === 0) {
+      console.error("❌ [MUTE] No audio tracks found!");
+      alert("No audio tracks found!");
+      return;
+    }
+    
+    // Toggle to the NEW state (opposite of current)
+    const newAudioState = !isAudioOn;
+    console.log(`🎙️ [MUTE] Toggling audio tracks to: ${newAudioState ? "ON" : "MUTED"}`);
+    
+    audioTracks.forEach((track, idx) => {
+      track.enabled = newAudioState;
+      console.log(`🎙️ [MUTE] Track ${idx} enabled: ${track.enabled}`);
+    });
+    
+    // Update state FIRST
+    setIsAudioOn(newAudioState);
+    console.log(`🎙️ [MUTE] State set to: ${newAudioState}`);
+    
+    // Then notify others
+    socket.emit("mute", { roomId, muted: !newAudioState });
+    console.log(`🎙️ [MUTE] Sent mute notification - muted=${!newAudioState}`);
   };
 
   // 📹 Toggle video
   const toggleVideo = () => {
-    if (streamRef.current) {
-      streamRef.current.getVideoTracks().forEach((track) => {
-        track.enabled = !track.enabled;
-      });
-      setIsVideoOn(!isVideoOn);
+    console.log(`📹 [VIDEO] Button clicked - Current state: isVideoOn=${isVideoOn}`);
+    
+    if (!streamRef.current) {
+      console.error("❌ [VIDEO] No stream available!");
+      alert("No video stream available. Start call first.");
+      return;
     }
+    
+    const videoTracks = streamRef.current.getVideoTracks();
+    console.log(`📹 [VIDEO] Found ${videoTracks.length} video tracks`);
+    
+    if (videoTracks.length === 0) {
+      console.error("❌ [VIDEO] No video tracks found!");
+      alert("No video tracks found!");
+      return;
+    }
+    
+    // Toggle to the NEW state (opposite of current)
+    const newVideoState = !isVideoOn;
+    console.log(`📹 [VIDEO] Toggling video tracks to: ${newVideoState ? "ON" : "OFF"}`);
+    
+    videoTracks.forEach((track, idx) => {
+      track.enabled = newVideoState;
+      console.log(`📹 [VIDEO] Track ${idx} enabled: ${track.enabled}`);
+    });
+    
+    // Update state FIRST
+    setIsVideoOn(newVideoState);
+    console.log(`📹 [VIDEO] State set to: ${newVideoState}`);
+    
+    // Then notify others
+    socket.emit("video", { roomId, videoOn: newVideoState });
+    console.log(`📹 [VIDEO] Sent video notification - videoOn=${newVideoState}`);
   };
 
   // 📞 End call
@@ -268,66 +392,122 @@ const VideoCall = () => {
   // 📺 Share screen
   const toggleScreenShare = async () => {
     try {
+      console.log(`📺 Toggle screen share - Current state: ${isScreenSharing}, Peer: ${peerRef.current ? "✅" : "❌"}`);
+      
+      if (!peerRef.current) {
+        console.error("❌ Peer connection not established yet");
+        alert("Please wait for video connection to establish before sharing screen");
+        return;
+      }
+
       if (!isScreenSharing) {
-        const screenStream = await navigator.mediaDevices.getDisplayMedia({
-          video: { cursor: "always" },
-          audio: false,
-        });
+        // START SCREEN SHARE
+        console.log("📺 [1/4] Getting display media...");
+        
+        try {
+          const screenStream = await navigator.mediaDevices.getDisplayMedia({
+            video: { 
+              cursor: "always",
+              displaySurface: "monitor"
+            },
+            audio: false,
+          });
+          
+          console.log("📺 [2/4] Display media obtained:", screenStream);
+          screenStreamRef.current = screenStream;
 
-        screenStreamRef.current = screenStream;
+          const videoTrack = screenStream.getVideoTracks()[0];
+          console.log("📺 [3/4] Video track obtained:", videoTrack);
+          
+          if (!videoTrack) {
+            throw new Error("Failed to get video track from screen stream");
+          }
 
-        const videoTrack = screenStream.getVideoTrack();
-        const sender = peerRef.current
-          .getSenders()
-          .find((s) => s.track && s.track.kind === "video");
+          const sender = peerRef.current
+            .getSenders()
+            .find((s) => s.track && s.track.kind === "video");
 
-        if (sender) {
-          await sender.replaceTrack(videoTrack);
-          setIsScreenSharing(true);
+          console.log("📺 [3.5/4] Found video sender:", sender ? "✅ YES" : "❌ NO");
 
-          socket.emit("screen-share-start", { roomId });
+          if (sender) {
+            console.log("📺 [4/4] Replacing track with screen...");
+            await sender.replaceTrack(videoTrack);
+            setIsScreenSharing(true);
+            console.log("✅ Screen sharing started!");
 
-          // Handle when user stops sharing from the browser share menu
-          videoTrack.onended = async () => {
-            const originalTrack = streamRef.current.getVideoTracks()[0];
-            await sender.replaceTrack(originalTrack);
-            screenStreamRef.current = null;
-            setIsScreenSharing(false);
-            socket.emit("screen-share-stop", { roomId });
-          };
+            socket.emit("screen-share-start", { roomId });
+
+            // Handle when user stops sharing from the browser share menu
+            videoTrack.onended = async () => {
+              console.log("📺 Screen share stopped by user (from OS)");
+              const originalTrack = streamRef.current.getVideoTracks()[0];
+              if (originalTrack) {
+                await sender.replaceTrack(originalTrack);
+              }
+              screenStreamRef.current = null;
+              setIsScreenSharing(false);
+              socket.emit("screen-share-stop", { roomId });
+            };
+          } else {
+            console.error("❌ No video sender found for screen share");
+            screenStream.getTracks().forEach(track => track.stop());
+          }
+        } catch (getMediaError) {
+          console.error("❌ Failed to get display media:", getMediaError);
+          if (getMediaError.name === "NotAllowedError") {
+            alert("Screen sharing was cancelled");
+          } else if (getMediaError.name === "NotFoundError") {
+            alert("No screens/windows found to share");
+          } else {
+            alert(`Error accessing screen: ${getMediaError.message}`);
+          }
+          throw getMediaError;
         }
       } else {
-        // Stop screen sharing
+        // STOP SCREEN SHARE
+        console.log("📺 Stopping screen share...");
         if (screenStreamRef.current) {
-          screenStreamRef.current.getTracks().forEach((track) => track.stop());
+          screenStreamRef.current.getTracks().forEach((track) => {
+            console.log("📺 Stopping screen track:", track);
+            track.stop();
+          });
           screenStreamRef.current = null;
         }
 
-        const videoTrack = streamRef.current.getVideoTracks()[0];
+        const videoTrack = streamRef.current?.getVideoTracks()[0];
+        console.log("📺 Original video track:", videoTrack ? "✅ Found" : "❌ Not found");
+        
         const sender = peerRef.current
           .getSenders()
           .find((s) => s.track && s.track.kind === "video");
 
         if (sender && videoTrack) {
           await sender.replaceTrack(videoTrack);
+          console.log("✅ Switched back to camera");
+        } else {
+          console.error("❌ Could not switch back to camera - sender or videoTrack missing");
         }
 
         setIsScreenSharing(false);
         socket.emit("screen-share-stop", { roomId });
       }
     } catch (error) {
-      if (error.name !== "NotAllowedError") {
-        console.error("Error toggling screen share:", error);
-      }
+      console.error("❌ Error in toggleScreenShare:", error);
+      // Already handled the specific errors above
     }
   };
 
   // 💬 Send chat message
   const sendChatMessage = () => {
     if (!chatInput.trim()) return;
+    if (!socketId) {
+      console.warn("⚠️ socketId not set yet, waiting...");
+      return;
+    }
 
     const message = {
-      sender: "You",
+      senderId: currentUserId,
+      senderName: "You",
       content: chatInput,
       timestamp: new Date().toLocaleTimeString([], {
         hour: "2-digit",
@@ -335,14 +515,40 @@ const VideoCall = () => {
       }),
     };
 
-    setMessages([...messages, message]);
+    console.log(`📤 Sending message from socketId ${socketId}: ${chatInput}`);
+    // ✅ DON'T add to local messages - server will broadcast it back
     socket.emit("chat-message", { roomId, message });
     setChatInput("");
   };
 
   // 💬 Handle incoming chat messages
   const handleChatMessage = (message) => {
-    setMessages((prev) => [...prev, message]);
+    console.log(`📨 RAW message received:`, message);
+    console.log(`📍 Current socketId: ${socketId || "NOT_SET_YET"}`);
+    console.log(`📍 Message socketId: ${message.socketId}`);
+    
+    // If socketId not available yet, store in pending (DON'T display yet)
+    if (!socketId) {
+      console.log(`⏳ socketId not available yet, storing message as pending - will process later`);
+      setPendingMessages((prev) => [...prev, message]);
+      if (!isChatOpen) {
+        setUnreadCount((prev) => prev + 1);
+      }
+      return;
+    }
+    
+    // Use socketId to identify sender - more reliable than userId
+    const isCurrentUserMessage = message.socketId === socketId;
+    console.log(`📍 Is current user message? ${isCurrentUserMessage}`);
+    
+    const displayMessage = {
+      ...message,
+      isCurrentUser: isCurrentUserMessage,
+    };
+    
+    console.log(`💬 Message will display as: ${isCurrentUserMessage ? "RIGHT ✓ (sender)" : "LEFT (receiver)"}`);
+    
+    setMessages((prev) => [...prev, displayMessage]);
     if (!isChatOpen) {
       setUnreadCount((prev) => prev + 1);
     }
@@ -392,13 +598,13 @@ const VideoCall = () => {
         <div className="flex-1 flex flex-col gap-2 md:gap-4">
           {/* Remote Video (larger) */}
           <div className="flex-1 relative bg-[#0f0f11] rounded-lg overflow-hidden border-2 border-amber-500/30 min-h-[200px] md:min-h-0">
-            {isRemoteConnected ? (
-              <video
-                ref={remoteVideo}
-                autoPlay
-                className="w-full h-full object-cover"
-              />
-            ) : (
+            <video
+              ref={remoteVideo}
+              autoPlay
+              className="w-full h-full object-cover"
+              style={{ display: isRemoteConnected ? 'block' : 'none' }}
+            />
+            {!isRemoteConnected && (
               <div className="w-full h-full flex items-center justify-center">
                 <div className="text-center">
                   <p className="text-stone-500 mb-2">⏳ Waiting for remote user...</p>
@@ -412,21 +618,21 @@ const VideoCall = () => {
             {/* Remote participant info overlay */}
             {isRemoteConnected && (
               <div className="absolute top-2 left-2 bg-black/70 px-3 py-1 rounded-full text-xs font-semibold">
-                👤 Remote User
+                👤 Remote User {isRemoteScreenSharing && "📺 (Screen)"}
               </div>
             )}
           </div>
 
           {/* Local Video (smaller, picture-in-picture) */}
-          <div className="md:absolute md:bottom-20 md:right-4 md:w-48 md:h-36 h-32 w-full relative bg-[#0f0f11] rounded-lg overflow-hidden border-2 border-amber-500">
-            {isCallStarted ? (
-              <video
-                ref={localVideo}
-                autoPlay
-                muted
-                className="w-full h-full object-cover"
-              />
-            ) : (
+          <div className={`md:absolute md:bottom-20 md:right-4 md:w-48 md:h-36 h-32 w-full relative bg-[#0f0f11] rounded-lg overflow-hidden border-2 border-amber-500 ${isScreenSharing ? "md:w-32 md:h-24" : ""}`}>
+            <video
+              ref={localVideo}
+              autoPlay
+              muted
+              className="w-full h-full object-cover"
+              style={{ display: isCallStarted && !isScreenSharing ? 'block' : isScreenSharing ? 'block' : 'none', opacity: isScreenSharing ? 0.6 : 1 }}
+            />
+            {!isCallStarted && (
               <div className="w-full h-full flex items-center justify-center">
                 <p className="text-stone-500 text-sm">📷 Your camera</p>
               </div>
@@ -477,19 +683,24 @@ const VideoCall = () => {
               messages.map((msg, idx) => (
                 <div
                   key={idx}
-                  className={`flex ${msg.sender === "You" ? "justify-end" : "justify-start"}`}
+                  className={`flex ${msg.isCurrentUser ? "justify-end" : "justify-start"}`}
                 >
-                  <div
-                    className={`max-w-xs px-3 py-2 rounded-lg text-sm ${
-                      msg.sender === "You"
-                        ? "bg-amber-500/80 text-white rounded-br-none"
-                        : "bg-stone-700 text-stone-100 rounded-bl-none"
-                    }`}
-                  >
-                    <p className="break-words">{msg.content}</p>
-                    <span className="text-xs opacity-70 mt-1 block">
-                      {msg.timestamp}
-                    </span>
+                  <div className="flex flex-col gap-1">
+                    <div
+                      className={`max-w-xs px-3 py-2 rounded-lg text-sm ${
+                        msg.isCurrentUser
+                          ? "bg-amber-500/80 text-white rounded-br-none"
+                          : "bg-stone-700 text-stone-100 rounded-bl-none"
+                      }`}
+                    >
+                      <p className="break-words">{msg.content}</p>
+                      <span className="text-xs opacity-70">
+                        {msg.timestamp}
+                      </span>
+                    </div>
+                    {msg.isCurrentUser && (
+                      <span className="text-xs text-stone-400 text-right px-1">You</span>
+                    )}
                   </div>
                 </div>
               ))

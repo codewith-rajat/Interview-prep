@@ -21,10 +21,10 @@ export default function UpcomingInterviews() {
 
         console.log(`📥 Fetched interviews:`, res.data.data);
 
-        // ✅ upcoming filter - only scheduled/accepted status and future dates
-        const now = new Date();
+        // ✅ NO NEED TO FILTER - Backend already returns duration-aware upcoming interviews
+        // Backend only returns interviews where scheduledAt + duration >= now
         const upcoming = res.data.data.filter(
-          (b) => new Date(b.scheduledAt) >= now && (b.status === "scheduled" || b.status === "accepted")
+          (b) => b.status === "scheduled" || b.status === "accepted"
         );
 
         console.log(`✅ Filtered to ${upcoming.length} upcoming interviews`);

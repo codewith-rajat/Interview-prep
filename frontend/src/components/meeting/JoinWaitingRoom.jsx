@@ -20,8 +20,8 @@ const JoinWaitingRoom = () => {
     const fetchInterviewData = async () => {
       try {
         // Get current user
-        const userRes = await API.get("/users/me");
-        setCurrentUser(userRes.data.data);
+        const userRes = await API.get("/user/me");
+        setCurrentUser(userRes.data);
 
         // Find interview by roomId
         const res = await API.get("/interviews/upcoming");
@@ -36,7 +36,7 @@ const JoinWaitingRoom = () => {
         setInterview(foundInterview);
 
         // Determine other user
-        const userId = userRes.data.data._id;
+        const userId = userRes.data._id;
         const otherUserId = foundInterview.interviewer._id === userId 
           ? foundInterview.interviewee 
           : foundInterview.interviewer;
