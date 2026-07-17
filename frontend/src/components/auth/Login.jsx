@@ -7,7 +7,6 @@ import { Link, useNavigate } from "react-router-dom";
 export default function Login() {
   const navigate = useNavigate();
 
-  // Redirect if already logged in
   useEffect(() => {
     const token = localStorage.getItem("token");
     const user = JSON.parse(localStorage.getItem("user") || "{}");
@@ -40,11 +39,9 @@ export default function Login() {
       try {
         const res = await API.post("/auth/login", values);
 
-        // 🔥 store auth
         localStorage.setItem("token", res.data.token);
         localStorage.setItem("user", JSON.stringify(res.data.user));
 
-        // 🔥 role based redirect
         if (res.data.user.role === "interviewer") {
           navigate("/dashboard/2");
         } else {

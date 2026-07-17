@@ -5,7 +5,6 @@ const RoleSelection = () => {
   const navigate = useNavigate();
 
   const handleSelectRole = (role) => {
-    // Store the selected role in session/state
     sessionStorage.setItem("selectedRole", role);
     navigate("/register");
   };
@@ -22,7 +21,7 @@ const RoleSelection = () => {
         </div>
 
         <div className="grid md:grid-cols-2 gap-8">
-          {/* Practice Card */}
+          
           <div
             onClick={() => handleSelectRole("interviewee")}
             className="group cursor-pointer"
@@ -61,7 +60,6 @@ const RoleSelection = () => {
             </div>
           </div>
 
-          {/* Interview Card */}
           <div
             onClick={() => handleSelectRole("interviewer")}
             className="group cursor-pointer"

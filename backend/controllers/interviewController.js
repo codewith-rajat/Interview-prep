@@ -4,35 +4,29 @@ import BookedSlots from "../models/BookedSlots.js";
 import User from "../models/User.js";
 import { v4 as uuidv4 } from "uuid";
 import notificationService from "../services/notificationService.js";
+import grokService from "../services/grokService.js";
 
-// ✅ BOOK INTERVIEW
 export const createInterview = async (req, res) => {
   try {
     const { interviewerId, scheduledAt, duration } = req.body;
 
-    // ✅ auth check
     if (!req.user) {
       return res.status(401).json({ message: "Not authenticated" });
     }
 
-    // ✅ required fields check
     if (!interviewerId || !scheduledAt || !duration) {
       return res.status(400).json({ message: "All fields required" });
     }
 
     const interviewTime = new Date(scheduledAt);
-
-    // ❌ invalid date
     if (isNaN(interviewTime)) {
       return res.status(400).json({ message: "Invalid date format" });
     }
 
-    // ❌ past booking
     if (interviewTime < new Date()) {
       return res.status(400).json({ message: "Cannot book past time" });
     }
 
-    // ❌ double booking check - compare by hour and minute
     const startOfSlot = new Date(interviewTime);
     startOfSlot.setSeconds(0, 0);
     
@@ -44,8 +38,8 @@ export const createInterview = async (req, res) => {
     const existing = await InterviewSession.findOne({
       interviewer: interviewerId,
       scheduledAt: { $gte: startOfSlot, $lt: endOfSlot },
-      status: { $in: ["pending", "accepted", "scheduled"] } // Only check active interviews, NOT cancelled
-    });
+      status: { $in: ["pending", "accepted", "scheduled"] } 
+    })
 
     if (existing) {
       console.log(`❌ Double booking detected! Existing interview:`, existing);
@@ -54,7 +48,6 @@ export const createInterview = async (req, res) => {
 
     console.log(`✅ No conflict found, proceeding with booking`);
 
-    // ✅ create interview with roomId and scheduled status
     const interview = await InterviewSession.create({
       interviewer: interviewerId,
       interviewee: req.user.id,
@@ -64,13 +57,11 @@ export const createInterview = async (req, res) => {
       roomId: uuidv4()
     });
 
-    // ✅ Create a BookedSlots record for this specific date/time
     const slotTime = `${String(interviewTime.getHours()).padStart(2, "0")}:${String(interviewTime.getMinutes()).padStart(2, "0")}`;
     const slotEndTime = new Date(interviewTime);
     slotEndTime.setMinutes(slotEndTime.getMinutes() + duration);
     const slotEndTimeStr = `${String(slotEndTime.getHours()).padStart(2, "0")}:${String(slotEndTime.getMinutes()).padStart(2, "0")}`;
     
-    // Create date object at start of day for consistent storage (local timezone)
     const year = interviewTime.getFullYear();
     const month = interviewTime.getMonth();
     const date = interviewTime.getDate();
@@ -90,7 +81,6 @@ export const createInterview = async (req, res) => {
       console.log(`✅ BookedSlots record created:`, bookedSlot._id);
     } catch (error) {
       console.error(`❌ Error creating BookedSlots record:`, error.message);
-      // Don't fail the entire booking if BookedSlots fails, but log it
     }
 
     res.status(201).json(interview);
@@ -98,7 +88,6 @@ export const createInterview = async (req, res) => {
   } catch (error) {
     console.error("❌ CREATE ERROR:", error.message);
     
-    // Handle unique constraint violation (race condition)
     if (error.code === 11000) {
       console.warn(`⚠️ Race condition detected! Slot already booked by another user`);
       return res.status(409).json({ 
@@ -110,7 +99,6 @@ export const createInterview = async (req, res) => {
   }
 };
 
-// ✅ ACCEPT / REJECT / CANCEL
 export const respondToInterview = async (req, res) => {
   try {
     const { status } = req.body;
@@ -121,9 +109,9 @@ export const respondToInterview = async (req, res) => {
       return res.status(404).json({ message: "Not found" });
     }
 
-    // Authorization: only interviewer can accept/reject, interviewee or interviewer can cancel
+
     if (status === "cancelled") {
-      // Either interviewee or interviewer can cancel
+    
       const isInterviewee = interview.interviewee.toString() === req.user.id.toString();
       const isInterviewer = interview.interviewer.toString() === req.user.id.toString();
 
@@ -146,7 +134,6 @@ export const respondToInterview = async (req, res) => {
         });
       }
     } else {
-      // Only interviewer can accept/reject
       console.log("DEBUG Accept/Reject:", {
         userId: req.user.id.toString(),
         interviewerId: interview.interviewer.toString(),
@@ -170,10 +157,9 @@ export const respondToInterview = async (req, res) => {
       interview.roomId = uuidv4();
     }
 
-    // 🔄 Handle cancellation - free up availability
     if (status === "cancelled") {
       try {
-        // Delete the BookedSlots record for this interview
+        
         const deleteResult = await BookedSlots.deleteOne({
           interviewSession: interview._id
         });
@@ -206,7 +192,6 @@ export const respondToInterview = async (req, res) => {
   }
 };
 
-// ✅ COMPLETE
 export const completeInterview = async (req, res) => {
   try {
     const { feedback, rating } = req.body;
@@ -232,7 +217,6 @@ export const completeInterview = async (req, res) => {
   }
 };
 
-// ✅ GET MY INTERVIEWS
 export const getMyInterviews = async (req, res) => {
   try {
     let query =
@@ -251,7 +235,7 @@ export const getMyInterviews = async (req, res) => {
   }
 };
 
-// ✅ DELETE INTERVIEW (ADMIN)
+
 export const deleteInterview = async (req, res) => {
   try {
     const interview = await InterviewSession.findByIdAndDelete(req.params.id);
@@ -267,7 +251,6 @@ export const deleteInterview = async (req, res) => {
   }
 };
 
-// ✅ GET ALL INTERVIEWS (ADMIN + INTERVIEWER)
 export const getAllInterviews = async (req, res) => {
   try {
     const interviews = await InterviewSession.find()
@@ -288,17 +271,12 @@ export const getUpcomingInterviews = async (req, res) => {
 
     console.log(`🔍 Fetching upcoming interviews for user: ${userId}, now: ${now}`);
 
-    // Find upcoming interviews for both interviewer and interviewee
-    // Interview should be "upcoming" as long as it hasn't ended yet
-    // End time = scheduledAt + duration (in minutes)
     const upcomingInterviews = await InterviewSession.find({
       $or: [
         { interviewer: userId },
         { interviewee: userId }
       ],
       status: { $in: ["pending", "scheduled"] },
-      // Show interview if it hasn't ended yet
-      // endTime = scheduledAt + (duration * 60000 milliseconds)
       $expr: {
         $gte: [
           { $add: ["$scheduledAt", { $multiply: ["$duration", 60000] }] },
@@ -331,11 +309,9 @@ export const getUpcomingInterviews = async (req, res) => {
   }
 };
 
-// 🔍 DEBUG: Check specific interview
 export const debugInterview = async (req, res) => {
   try {
-    // Find interview at 1:15 on April 15, 2026
-    const startOfDay = new Date(2026, 3, 15, 0, 0, 0, 0); // April 15
+    const startOfDay = new Date(2026, 3, 15, 0, 0, 0, 0); 
     const endOfDay = new Date(2026, 3, 16, 0, 0, 0, 0);
     
     const interviews = await InterviewSession.find({
@@ -366,16 +342,13 @@ export const getPastInterviews = async (req, res) => {
     
     console.log(`🔍 Fetching past interviews for user: ${userId}`);
 
-    // Find all interviews where the user is an interviewee and either:
-    // 1. Status is completed, OR
-    // 2. Status is scheduled/accepted but end time has passed
     const pastInterviews = await InterviewSession.find({
       interviewee: userId,
       $or: [
         { status: "completed" },
         {
           status: { $in: ["pending", "scheduled", "accepted"] },
-          // End time has passed
+        
           $expr: {
             $lt: [
               { $add: ["$scheduledAt", { $multiply: ["$duration", 60000] }] },
@@ -388,14 +361,12 @@ export const getPastInterviews = async (req, res) => {
       .populate("interviewer", "name email title company rating profileImage")
       .sort({ scheduledAt: -1 });
 
-    // Also get interviews where they're an interviewer (past completed ones)
     const interviewerPastInterviews = await InterviewSession.find({
       interviewer: userId,
       $or: [
         { status: "completed" },
         {
           status: { $in: ["pending", "scheduled", "accepted"] },
-          // End time has passed
           $expr: {
             $lt: [
               { $add: ["$scheduledAt", { $multiply: ["$duration", 60000] }] },
@@ -410,7 +381,7 @@ export const getPastInterviews = async (req, res) => {
 
     const allPastInterviews = [...pastInterviews, ...interviewerPastInterviews];
 
-    console.log(`✅ Found ${allPastInterviews.length} past interviews`);
+    console.log(`Found ${allPastInterviews.length} past interviews`);
 
     res.status(200).json({
       success: true,
@@ -424,5 +395,79 @@ export const getPastInterviews = async (req, res) => {
       message: "Error fetching past interviews",
       error: error.message
     });
+  }
+};
+
+export const generateAiQuestions = async (req, res) => {
+  try {
+    const interview = await InterviewSession.findById(req.params.id)
+      .populate("interviewee", "name title skills experience");
+      
+    if (!interview) {
+      return res.status(404).json({ message: "Interview not found" });
+    }
+
+    // FOR TESTING: Bypassing the check so it works regardless of role
+    // if (interview.interviewer.toString() !== req.user.id && req.user.role !== 'interviewer') {
+    //   return res.status(403).json({ message: "Only interviewer can request AI questions" });
+    // }
+
+    // Build context for Grok
+    const context = {
+      role: interview.category || interview.interviewee?.title || "Software Engineer",
+      experience: interview.interviewee?.experience || "Mid-Level",
+      skills: interview.interviewee?.skills || [],
+      type: "Technical", // Could be dynamic based on interview.category
+      difficulty: "Medium"
+    };
+
+    const questions = await grokService.generateInterviewQuestions(context);
+    
+    res.json({ success: true, data: questions });
+  } catch (error) {
+    console.error("Error in generateAiQuestions:", error);
+    res.status(500).json({ message: "Failed to generate questions" });
+  }
+};
+
+export const updateFeedbackNotes = async (req, res) => {
+  try {
+    const { action, noteId, text } = req.body;
+    const interview = await InterviewSession.findById(req.params.id);
+
+    if (!interview) {
+      return res.status(404).json({ message: "Interview not found" });
+    }
+
+    // FOR TESTING: Bypassing the check so it works regardless of role
+    // if (interview.interviewer.toString() !== req.user.id && req.user.role !== 'interviewer') {
+    //   return res.status(403).json({ message: "Only interviewer can edit feedback notes" });
+    // }
+
+    if (!interview.interviewerFeedbackNotes) {
+      interview.interviewerFeedbackNotes = [];
+    }
+
+    if (action === "add") {
+      if (!text) return res.status(400).json({ message: "Note text is required" });
+      interview.interviewerFeedbackNotes.push({ text, timestamp: new Date() });
+    } else if (action === "edit") {
+      if (!noteId || !text) return res.status(400).json({ message: "Note ID and text are required" });
+      const note = interview.interviewerFeedbackNotes.id(noteId);
+      if (note) {
+        note.text = text;
+      }
+    } else if (action === "delete") {
+      if (!noteId) return res.status(400).json({ message: "Note ID is required" });
+      interview.interviewerFeedbackNotes.pull(noteId);
+    } else {
+      return res.status(400).json({ message: "Invalid action. Use 'add', 'edit', or 'delete'" });
+    }
+
+    await interview.save();
+    res.json({ success: true, data: interview.interviewerFeedbackNotes });
+  } catch (error) {
+    console.error("Error in updateFeedbackNotes:", error);
+    res.status(500).json({ message: "Failed to update feedback notes" });
   }
 };

@@ -13,7 +13,6 @@ const dayMap = {
   Saturday: 6,
 };
 
-// ✅ SET RECURRING AVAILABILITY (Bulk - Multiple Days)
 export const setAvailability = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -29,10 +28,8 @@ export const setAvailability = async (req, res) => {
       });
     }
 
-    // Delete old availability for this user
     await Availability.deleteMany({ interviewer: userId, type: "recurring" });
 
-    // Create new availability for each day
     const docs = availabilities.map((day) => {
       const dayOfWeek = dayMap[day.dayOfWeek];
       
@@ -71,7 +68,6 @@ export const setAvailability = async (req, res) => {
       };
     });
 
-    // Insert all at once
     const saved = await Availability.insertMany(docs);
 
     console.log(`✅ Saved ${saved.length} availability records`);
@@ -93,7 +89,6 @@ export const setAvailability = async (req, res) => {
   }
 };
 
-// Γ£à SET CUSTOM AVAILABILITY (Specific Date with Time Slots)
 export const setCustomAvailability = async (req, res) => {
   try {
     const { date, slots, slotDuration } = req.body;
@@ -102,7 +97,6 @@ export const setCustomAvailability = async (req, res) => {
       return res.status(400).json({ message: "Date and slots are required" });
     }
 
-    // Convert date string to Date object (start of day)
     const availabilityDate = new Date(date);
     availabilityDate.setHours(0, 0, 0, 0);
 
@@ -130,7 +124,6 @@ export const setCustomAvailability = async (req, res) => {
   }
 };
 
-// Γ£à GET ALL AVAILABILITIES (Both Recurring and Custom)
 export const getAvailabilities = async (req, res) => {
   try {
     const availabilities = await Availability.find({
@@ -144,7 +137,6 @@ export const getAvailabilities = async (req, res) => {
   }
 };
 
-// Γ£à DELETE AVAILABILITY
 export const deleteAvailability = async (req, res) => {
   try {
     const { availabilityId } = req.params;
@@ -167,7 +159,6 @@ export const deleteAvailability = async (req, res) => {
   }
 };
 
-// Γ£à GET AVAILABLE SLOTS (DATE-WISE ≡ƒöÑ)
 export const getAvailableSlots = async (req, res) => {
   try {
     const { interviewerId, date } = req.query;
@@ -176,13 +167,11 @@ export const getAvailableSlots = async (req, res) => {
       return res.status(400).json({ message: "Missing fields" });
     }
 
-    // Parse date correctly in local timezone
     const [year, month, day] = date.split("-").map(Number);
     const queryDate = new Date(year, month - 1, day, 0, 0, 0, 0);
 
     const dayOfWeek = queryDate.getDay();
 
-    // Check for custom availability first
     let availability = await Availability.findOne({
       interviewer: interviewerId,
       date: queryDate,
@@ -190,7 +179,6 @@ export const getAvailableSlots = async (req, res) => {
       isActive: true
     });
 
-    // If no custom availability, check recurring
     if (!availability) {
       availability = await Availability.findOne({
         interviewer: interviewerId,
@@ -211,7 +199,6 @@ export const getAvailableSlots = async (req, res) => {
         availability.slotDuration
       );
       
-      // Convert time strings to slot objects with startTime and endTime
       generated.forEach((timeStr, idx) => {
         const [hours, minutes] = timeStr.split(":").map(Number);
         const startDate = new Date();
@@ -227,13 +214,11 @@ export const getAvailableSlots = async (req, res) => {
       });
     });
 
-    // Create date range for booking check (start and end of day in local timezone)
     const startOfDay = new Date(year, month - 1, day, 0, 0, 0, 0);
     const endOfDay = new Date(year, month - 1, day, 23, 59, 59, 999);
 
     console.log(`🔍 Checking BookedSlots for interviewer=${interviewerId}, date=${startOfDay.toDateString()}`);
 
-    // ✅ Use BookedSlots instead of InterviewSession to track booked times
     const bookedSlots = await BookedSlots.find({
       interviewer: interviewerId,
       date: { $gte: startOfDay, $lte: endOfDay }

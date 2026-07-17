@@ -48,7 +48,6 @@ const InterviewerSetup = () => {
 
   const handleSubmit = async (values) => {
     try {
-      // Submit the interviewer profile data along with other fields
       const profilePayload = {
         bio: values.bio.trim(),
         title: values.title.trim(),
@@ -62,12 +61,10 @@ const InterviewerSetup = () => {
 
       const res = await API.patch("/user/update-profile", profilePayload);
       alert("Profile Created ✅");
-      
-      // Clear session storage
+    
       sessionStorage.removeItem("interviewerProfile");
       sessionStorage.removeItem("selectedRole");
       
-      // Redirect to interviewer dashboard
       navigate("/dashboard/2");
     } catch (err) {
       alert(err.response?.data?.message || "Failed to save profile");

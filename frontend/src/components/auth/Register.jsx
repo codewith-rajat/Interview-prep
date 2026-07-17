@@ -8,7 +8,6 @@ const Signup = () => {
   const navigate = useNavigate();
   const [selectedRole, setSelectedRole] = useState("interviewee");
 
-  // Redirect if already logged in
   useEffect(() => {
     const token = localStorage.getItem("token");
     const user = JSON.parse(localStorage.getItem("user") || "{}");
@@ -22,7 +21,6 @@ const Signup = () => {
     }
   }, [navigate]);
 
-  // Get selected role from sessionStorage
   useEffect(() => {
     const role = sessionStorage.getItem("selectedRole");
     if (role) {
@@ -49,7 +47,6 @@ const Signup = () => {
       const res = await API.post("/auth/register", values);
       localStorage.setItem("token", res.data.token);
       
-      // Route based on selected role
       if (values.role === "interviewer") {
         navigate("/interviewer-setup");
       } else {
@@ -81,7 +78,6 @@ const Signup = () => {
           >
             <Form className="space-y-5">
 
-              {/* Name */}
               <div className="flex flex-col gap-2">
                 <label className="text-xs font-medium text-gray-400">Full Name</label>
                 <Field
@@ -96,7 +92,6 @@ const Signup = () => {
                 />
               </div>
 
-              {/* Email */}
               <div className="flex flex-col gap-2">
                 <label className="text-xs font-medium text-gray-400">Email</label>
                 <Field
@@ -111,7 +106,6 @@ const Signup = () => {
                 />
               </div>
 
-              {/* Password */}
               <div className="flex flex-col gap-2">
                 <label className="text-xs font-medium text-gray-400">Password</label>
                 <Field
@@ -127,10 +121,8 @@ const Signup = () => {
                 />
               </div>
 
-              {/* Role */}
               <input type="hidden" name="role" value={selectedRole} />
 
-              {/* Button */}
               <button
                 type="submit"
                 className="w-full bg-amber-500 hover:bg-amber-600 text-black py-2.5 rounded-lg font-semibold transition mt-2"

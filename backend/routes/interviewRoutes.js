@@ -6,7 +6,9 @@ import {
   respondToInterview,
   completeInterview,
   getPastInterviews,
-  debugInterview
+  debugInterview,
+  generateAiQuestions,
+  updateFeedbackNotes
 } from "../controllers/interviewController.js";
 import auth from "../middlewares/auth.js";
 
@@ -19,5 +21,7 @@ router.get("/past", auth.protect, getPastInterviews);
 router.get("/debug/check", auth.protect, debugInterview);
 router.patch("/:id/respond", auth.protect, respondToInterview);
 router.patch("/:id/complete", auth.protect, completeInterview);
+router.get("/:id/ai-questions", auth.protect, generateAiQuestions);
+router.patch("/:id/feedback-notes", auth.protect, updateFeedbackNotes);
 
 export default router;

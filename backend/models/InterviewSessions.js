@@ -21,6 +21,10 @@ const interviewSessionSchema = new mongoose.Schema(
       sessionRating: {type: Number, min: 1, max: 5}, // User rating
       sessionComment: String
     },
+    interviewerFeedbackNotes: [{
+      text: String,
+      timestamp: { type: Date, default: Date.now }
+    }],
     
     // ===== Recording & Media =====
     recordingUrl: String,

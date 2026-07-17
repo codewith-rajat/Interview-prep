@@ -1,27 +1,22 @@
 import InterviewSession from "../models/InterviewSessions.js";
 import User from "../models/User.js";
 
-// ===== GENERATE AI FEEDBACK (After interview ends) =====
 export const generateAIFeedback = async (req, res) => {
   try {
     const { interviewId, transcript, recordingDuration } = req.body;
 
-    // TODO: Integrate with Google Gemini API or Claude API
-    // This is a placeholder implementation
     
     const interview = await InterviewSession.findById(interviewId);
     if (!interview) {
       return res.status(404).json({ message: "Interview not found" });
     }
 
-    // Simulate AI feedback generation
-    // In production, call Google Gemini or Claude API
     const feedback = {
       summary: "Candidate demonstrated solid understanding of fundamentals with room for improvement in advanced topics.",
       technical: "Strong grasp of core concepts. Struggled slightly with optimization and edge cases.",
       communication: "Clear explanation of thought process. Could improve on asking clarifying questions upfront.",
       problemSolving: "Good instinct for breaking problems down. Identified overlapping subproblems but missed optimization opportunities.",
-      recommendation: "CONSIDER", // HIRE / CONSIDER / NO_HIRE
+      recommendation: "CONSIDER", 
       strengths: [
         "Strong fundamentals understanding",
         "Clear verbal communication",
@@ -32,17 +27,16 @@ export const generateAIFeedback = async (req, res) => {
         "Ask more clarifying questions",
         "Practice with more advanced scenarios"
       ],
-      overallRating: "GOOD" // POOR / AVERAGE / GOOD / EXCELLENT
+      overallRating: "GOOD"
     };
 
     interview.feedback = feedback;
     interview.recordingDuration = recordingDuration;
     await interview.save();
 
-    // Award credits to interviewer
     const interviewer = await User.findById(interview.interviewer);
     if (interviewer) {
-      interviewer.creditBalance += 5; // 5 credits per interview
+      interviewer.creditBalance += 5; 
       interviewer.totalEarned = (interviewer.totalEarned || 0) + 5;
       await interviewer.save();
     }
@@ -57,7 +51,6 @@ export const generateAIFeedback = async (req, res) => {
   }
 };
 
-// ===== GET INTERVIEW FEEDBACK =====
 export const getInterviewFeedback = async (req, res) => {
   try {
     const { interviewId } = req.params;
@@ -84,7 +77,6 @@ export const getInterviewFeedback = async (req, res) => {
   }
 };
 
-// ===== SUBMIT SESSION RATING (User rates the interview) =====
 export const submitSessionRating = async (req, res) => {
   try {
     const { interviewId } = req.params;
@@ -105,7 +97,6 @@ export const submitSessionRating = async (req, res) => {
 
     await interview.save();
 
-    // Update interviewer rating
     const interviews = await InterviewSession.find({
       interviewer: interview.interviewer,
       "feedback.sessionRating": { $exists: true }

@@ -1,10 +1,6 @@
 import User from "../models/User.js";
 import mongoose from "mongoose";
-/*
-=====================================
-SEARCH INTERVIEWERS (WITH PAGINATION)
-=====================================
-*/
+
 
 export const searchInterviewers = async (req, res) => {
   try {
@@ -28,7 +24,6 @@ export const searchInterviewers = async (req, res) => {
       }
     }
 
-    // Handle expertise array search for newer profiles
     if(skill) {
       query.$or = [
         {
@@ -48,12 +43,11 @@ export const searchInterviewers = async (req, res) => {
           }
         }
       ];
-      delete query.skills; // Remove the old skills query if $or is used
+      delete query.skills; 
     }
 
     const skip = (Number(page) - 1) * Number(limit);
 
-    // Run both queries in parallel
     const [total, interviewers] = await Promise.all([
       User.countDocuments(query),
       User.find(query)
@@ -81,7 +75,6 @@ export const getInterviewerById = async (req, res) => {
   try {
     const { id } = req.params;
 
-    // ✅ ID check
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({ message: "Invalid ID" });
     }

@@ -213,48 +213,52 @@ const SetAvailability = () => {
 
         {/* HEADER */}
         <div className="mb-8">
-          <h1 className="text-4xl font-bold text-white mb-2">
+          <h1 className="text-xl sm:text-2xl font-bold text-white my-2">
             Great! Now let's set your availability
           </h1>
-          <p className="text-gray-400 text-lg">
+          <p className="text-gray-400 sm:text-md">
             Let your audience know when you're available. You can edit this later
           </p>
         </div>
 
         {/* DURATION */}
         <div className="bg-[#0f0f11] border border-amber-400/20 rounded-lg p-6 mb-8">
-          <label className="block text-white font-semibold mb-4 text-lg">
-            Session Duration (minutes)
-          </label>
+          <div>
+            <label className="block text-white font-semibold mb-4 text-lg">
+              Session Duration (minutes)
+            </label>
 
-          <div className="flex items-center gap-4 mb-3">
-            <input
-              type="number"
-              min="15"
-              max="480"
-              step="15"
-              value={duration}
-              onChange={(e) => setDuration(parseInt(e.target.value) || 60)}
-              className="w-32 bg-black border border-amber-400/30 text-white px-4 py-2 rounded focus:outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-400/20 font-semibold"
-            />
-            <span className="text-gray-400">
-              (Each slot will be exactly {duration} minutes)
-            </span>
-            <button
-              onClick={async () => {
-                try {
-                  await API.patch("/user/session-duration", { sessionDuration: duration });
-                  setMessage("✅ Session duration saved!");
-                  setTimeout(() => setMessage(""), 3000);
-                } catch (err) {
-                  setMessage("❌ Failed to save duration");
-                  console.error(err);
-                }
-              }}
-              className="ml-auto px-4 py-2 bg-amber-400 text-black font-semibold rounded hover:bg-amber-500 transition"
-            >
-              Save Duration
-            </button>
+            <div className="flex items-center gap-4 mb-3">
+              <input
+                type="number"
+                min="15"
+                max="480"
+                step="15"
+                value={duration}
+                onChange={(e) => setDuration(parseInt(e.target.value) || 60)}
+                className="w-32 bg-black border border-amber-400/30 text-white px-4 py-2 rounded focus:outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-400/20 font-semibold"
+              />
+              <span className="text-gray-400">
+                (Each slot will be exactly {duration} minutes)
+              </span>
+            </div>
+            <div>
+              <button
+                onClick={async () => {
+                  try {
+                    await API.patch("/user/session-duration", { sessionDuration: duration });
+                    setMessage("✅ Session duration saved!");
+                    setTimeout(() => setMessage(""), 3000);
+                  } catch (err) {
+                    setMessage("❌ Failed to save duration");
+                    console.error(err);
+                  }
+                }}
+                className="ml-auto px-4 py-2 mb-3 bg-amber-400 text-black font-semibold rounded hover:bg-amber-500 transition"
+              >
+                Save Duration
+              </button>
+            </div>
           </div>
 
           <p className="text-xs text-gray-500">

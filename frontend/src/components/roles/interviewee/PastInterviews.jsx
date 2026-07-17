@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import axios from "axios";
-import { Calendar, Clock, User, Star, MessageSquare } from "lucide-react";
+import { Calendar, Clock, User, Star, MessageSquare, FileText } from "lucide-react";
 
 const PastInterviews = () => {
   const [pastInterviews, setPastInterviews] = useState([]);
@@ -105,6 +105,25 @@ const PastInterviews = () => {
                 <MessageSquare size={16} className="text-amber-400 mt-1 flex-shrink-0" />
                 <p className="text-gray-300 text-sm">{interview.feedbackId.summary}</p>
               </div>
+            </div>
+          )}
+
+          {interview.interviewerFeedbackNotes && interview.interviewerFeedbackNotes.length > 0 && (
+            <div className="bg-stone-800/50 border border-stone-700/50 rounded p-3 mb-4 space-y-2">
+              <h4 className="text-stone-300 font-semibold text-sm flex items-center gap-2 mb-2">
+                <FileText size={16} className="text-amber-400" />
+                Interviewer Notes
+              </h4>
+              <ul className="space-y-2 mt-2">
+                {interview.interviewerFeedbackNotes.map((note) => (
+                  <li key={note._id || Math.random()} className="text-gray-400 text-sm pl-3 border-l-2 border-amber-400/50">
+                    <p className="text-stone-300">{note.text}</p>
+                    <span className="text-[10px] text-stone-500 block mt-1">
+                      {new Date(note.timestamp).toLocaleString()}
+                    </span>
+                  </li>
+                ))}
+              </ul>
             </div>
           )}
 

@@ -1,7 +1,8 @@
  import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import socket from "../utils/socket";
-import { Wifi, WifiOff, Send, X } from "lucide-react";
+import { Wifi, WifiOff, Send, X, RefreshCw, MessageSquare, HelpCircle, Edit2, Trash2, Plus } from "lucide-react";
+import API from "../utils/api";
 
 const VideoCall = () => {
   const { id: roomId } = useParams();
@@ -33,6 +34,16 @@ const VideoCall = () => {
   const [unreadCount, setUnreadCount] = useState(0);
   const [pendingMessages, setPendingMessages] = useState([]); // Messages before socketId is set
   const chatEndRef = useRef();
+
+  // AI & Feedback states
+  const [interviewId, setInterviewId] = useState(null);
+  const [isInterviewer, setIsInterviewer] = useState(false);
+  const [activeTab, setActiveTab] = useState("chat"); // 'chat', 'questions', 'feedback'
+  const [aiQuestions, setAiQuestions] = useState([]);
+  const [isGeneratingQuestions, setIsGeneratingQuestions] = useState(false);
+  const [feedbackNotes, setFeedbackNotes] = useState([]);
+  const [feedbackInput, setFeedbackInput] = useState("");
+  const [editingNoteId, setEditingNoteId] = useState(null);
 
   // ⏱️ Call duration timer
   useEffect(() => {
@@ -85,20 +96,123 @@ const VideoCall = () => {
   useEffect(() => {
     const fetchCurrentUser = async () => {
       try {
-        const token = localStorage.getItem("token");
-        const response = await fetch("http://localhost:5001/api/user/me", {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        });
-        const data = await response.json();
-        setCurrentUserId(data._id);
+        const response = await API.get("/user/me");
+        console.log("Current User fetched:", response.data._id);
+        setCurrentUserId(response.data._id);
       } catch (error) {
         console.error("Error fetching current user:", error);
       }
     };
     fetchCurrentUser();
   }, []);
+
+  // Fetch meeting details to get interviewId and role
+  useEffect(() => {
+    const fetchMeetingDetails = async () => {
+      try {
+        const response = await API.get(`/meeting/room/${roomId}`);
+        const result = response.data;
+        if (result.success) {
+          setInterviewId(result.data.interviewId);
+          
+          let interviewerId = "";
+          if (result.data.interviewer && typeof result.data.interviewer === 'object') {
+             interviewerId = result.data.interviewer._id;
+          } else if (result.data.interviewer) {
+             interviewerId = result.data.interviewer;
+          }
+          
+          if (currentUserId && interviewerId === currentUserId) {
+            setIsInterviewer(true);
+          }
+        }
+      } catch (error) {
+        console.error("Error fetching meeting details:", error);
+        alert(`Error loading meeting details: ${error.response?.status} - ${error.response?.data?.message || error.message}. The AI Questions and Notes tabs will not work without valid meeting details.`);
+      }
+    };
+
+    // ALWAYS check local storage role as a reliable fallback immediately
+    const storedUserStr = localStorage.getItem("user");
+    if (storedUserStr) {
+      try {
+        const storedUser = JSON.parse(storedUserStr);
+        if (storedUser && storedUser.role === 'interviewer') {
+          setIsInterviewer(true);
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    if (currentUserId || localStorage.getItem("user")) {
+      fetchMeetingDetails();
+    }
+  }, [roomId, currentUserId]);
+
+  // AI Questions functions
+  const handleGenerateQuestions = async () => {
+    if (!interviewId) {
+      alert("Cannot generate questions: interviewId is missing. Ensure the meeting details loaded correctly.");
+      return;
+    }
+    setIsGeneratingQuestions(true);
+    try {
+      const response = await API.get(`/interviews/${interviewId}/ai-questions`);
+      const result = response.data;
+      if (result.success) {
+        setAiQuestions(result.data);
+        alert("Successfully generated " + result.data.length + " questions!");
+      } else {
+        alert("Backend returned success: false");
+      }
+    } catch (error) {
+      console.error("Error generating questions:", error);
+      alert(`Error generating questions: ${error.response?.data?.message || error.message}`);
+    } finally {
+      setIsGeneratingQuestions(false);
+    }
+  };
+
+  // Feedback Notes functions
+  const handleSaveFeedbackNote = async () => {
+    if (!feedbackInput.trim()) return;
+    if (!interviewId) {
+      alert("Cannot save note: interviewId is missing. Ensure the meeting details loaded correctly.");
+      return;
+    }
+    try {
+      const action = editingNoteId ? "edit" : "add";
+      const body = { action, text: feedbackInput, noteId: editingNoteId };
+      
+      const response = await API.patch(`/interviews/${interviewId}/feedback-notes`, body);
+      const result = response.data;
+      if (result.success) {
+        setFeedbackNotes(result.data);
+        setFeedbackInput("");
+        setEditingNoteId(null);
+        alert("Note saved successfully!");
+      } else {
+        alert("Backend returned success: false");
+      }
+    } catch (error) {
+      console.error("Error saving feedback note:", error);
+      alert(`Error saving note: ${error.response?.data?.message || error.message}`);
+    }
+  };
+
+  const handleDeleteFeedbackNote = async (noteId) => {
+    try {
+      const response = await API.patch(`/interviews/${interviewId}/feedback-notes`, { action: "delete", noteId });
+      const result = response.data;
+      if (result.success) {
+        setFeedbackNotes(result.data);
+      }
+    } catch (error) {
+      console.error("Error deleting feedback note:", error);
+      alert(`Error deleting note: ${error.response?.data?.message || error.message}`);
+    }
+  };
 
   // 🔑 Process pending messages once socketId is available
   useEffect(() => {
@@ -650,81 +764,197 @@ const VideoCall = () => {
           </div>
         </div>
 
-        {/* Chat Sidebar */}
+        {/* Sidebar (Chat / Questions / Feedback) */}
         <div className={`${isChatOpen ? "w-full md:w-72" : "hidden md:flex md:w-72"} flex flex-col bg-[#0f0f11] rounded-lg border-2 border-amber-500/30 overflow-hidden transition-all duration-300`}>
-          {/* Chat Header */}
-          <div className="bg-amber-500/10 border-b border-amber-500/30 p-3 flex justify-between items-center">
-            <h3 className="font-semibold flex items-center gap-2">
-              💬 Chat
-              {unreadCount > 0 && !isChatOpen && (
-                <span className="bg-red-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">
-                  {unreadCount}
-                </span>
-              )}
-            </h3>
-            <button
-              onClick={() => {
-                setIsChatOpen(!isChatOpen);
-                if (!isChatOpen) setUnreadCount(0);
-              }}
-              className="md:hidden text-amber-400 hover:text-amber-300"
-            >
-              <X size={20} />
-            </button>
-          </div>
-
-          {/* Chat Messages */}
-          <div className="flex-1 overflow-y-auto p-3 space-y-3 max-h-96 md:max-h-[calc(100vh-400px)]">
-            {messages.length === 0 ? (
-              <div className="text-center text-stone-500 text-sm py-8">
-                💭 No messages yet
-              </div>
-            ) : (
-              messages.map((msg, idx) => (
-                <div
-                  key={idx}
-                  className={`flex ${msg.isCurrentUser ? "justify-end" : "justify-start"}`}
-                >
-                  <div className="flex flex-col gap-1">
-                    <div
-                      className={`max-w-xs px-3 py-2 rounded-lg text-sm ${
-                        msg.isCurrentUser
-                          ? "bg-amber-500/80 text-white rounded-br-none"
-                          : "bg-stone-700 text-stone-100 rounded-bl-none"
-                      }`}
-                    >
-                      <p className="break-words">{msg.content}</p>
-                      <span className="text-xs opacity-70">
-                        {msg.timestamp}
-                      </span>
-                    </div>
-                    {msg.isCurrentUser && (
-                      <span className="text-xs text-stone-400 text-right px-1">You</span>
-                    )}
-                  </div>
-                </div>
-              ))
-            )}
-            <div ref={chatEndRef} />
-          </div>
-
-          {/* Chat Input */}
-          {isCallStarted && (
-            <div className="border-t border-amber-500/30 p-2 flex gap-2">
-              <input
-                type="text"
-                value={chatInput}
-                onChange={(e) => setChatInput(e.target.value)}
-                onKeyPress={(e) => e.key === "Enter" && sendChatMessage()}
-                placeholder="Type a message..."
-                className="flex-1 bg-stone-800 text-white px-3 py-2 rounded text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
-              />
+          
+          {/* Sidebar Header & Tabs */}
+          <div className="bg-amber-500/10 border-b border-amber-500/30 flex flex-col">
+            <div className="p-3 flex justify-between items-center border-b border-amber-500/20">
+              <h3 className="font-semibold flex items-center gap-2">
+                {activeTab === "chat" ? "💬 Chat" : activeTab === "questions" ? "🧠 Questions" : "📝 Feedback"}
+                {unreadCount > 0 && !isChatOpen && (
+                  <span className="bg-red-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">
+                    {unreadCount}
+                  </span>
+                )}
+              </h3>
               <button
-                onClick={sendChatMessage}
-                className="bg-amber-500 hover:bg-amber-600 text-black p-2 rounded transition"
+                onClick={() => {
+                  setIsChatOpen(!isChatOpen);
+                  if (!isChatOpen) setUnreadCount(0);
+                }}
+                className="md:hidden text-amber-400 hover:text-amber-300"
               >
-                <Send size={18} />
+                <X size={20} />
               </button>
+            </div>
+            
+            {/* Tabs for Interviewer */}
+            {isInterviewer && (
+              <div className="flex text-xs font-medium">
+                <button 
+                  onClick={() => setActiveTab("chat")}
+                  className={`flex-1 py-2 text-center transition-colors ${activeTab === "chat" ? "bg-amber-500/20 text-amber-400 border-b-2 border-amber-500" : "text-stone-400 hover:bg-stone-800"}`}
+                >
+                  <MessageSquare size={14} className="inline mr-1" /> Chat
+                </button>
+                <button 
+                  onClick={() => setActiveTab("questions")}
+                  className={`flex-1 py-2 text-center transition-colors ${activeTab === "questions" ? "bg-amber-500/20 text-amber-400 border-b-2 border-amber-500" : "text-stone-400 hover:bg-stone-800"}`}
+                >
+                  <HelpCircle size={14} className="inline mr-1" /> AI Qs
+                </button>
+                <button 
+                  onClick={() => setActiveTab("feedback")}
+                  className={`flex-1 py-2 text-center transition-colors ${activeTab === "feedback" ? "bg-amber-500/20 text-amber-400 border-b-2 border-amber-500" : "text-stone-400 hover:bg-stone-800"}`}
+                >
+                  <Edit2 size={14} className="inline mr-1" /> Notes
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Chat Content */}
+          {activeTab === "chat" && (
+            <>
+              <div className="flex-1 overflow-y-auto p-3 space-y-3 max-h-96 md:max-h-[calc(100vh-400px)]">
+                {messages.length === 0 ? (
+                  <div className="text-center text-stone-500 text-sm py-8">
+                    💭 No messages yet
+                  </div>
+                ) : (
+                  messages.map((msg, idx) => (
+                    <div key={idx} className={`flex ${msg.isCurrentUser ? "justify-end" : "justify-start"}`}>
+                      <div className="flex flex-col gap-1">
+                        <div className={`max-w-xs px-3 py-2 rounded-lg text-sm ${msg.isCurrentUser ? "bg-amber-500/80 text-white rounded-br-none" : "bg-stone-700 text-stone-100 rounded-bl-none"}`}>
+                          <p className="break-words">{msg.content}</p>
+                          <span className="text-xs opacity-70">{msg.timestamp}</span>
+                        </div>
+                        {msg.isCurrentUser && <span className="text-xs text-stone-400 text-right px-1">You</span>}
+                      </div>
+                    </div>
+                  ))
+                )}
+                <div ref={chatEndRef} />
+              </div>
+              {isCallStarted && (
+                <div className="border-t border-amber-500/30 p-2 flex gap-2">
+                  <input
+                    type="text"
+                    value={chatInput}
+                    onChange={(e) => setChatInput(e.target.value)}
+                    onKeyPress={(e) => e.key === "Enter" && sendChatMessage()}
+                    placeholder="Type a message..."
+                    className="flex-1 bg-stone-800 text-white px-3 py-2 rounded text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                  />
+                  <button onClick={sendChatMessage} className="bg-amber-500 hover:bg-amber-600 text-black p-2 rounded transition">
+                    <Send size={18} />
+                  </button>
+                </div>
+              )}
+            </>
+          )}
+
+          {/* AI Questions Content */}
+          {activeTab === "questions" && isInterviewer && (
+            <div className="flex-1 flex flex-col overflow-hidden">
+              <div className="p-3 border-b border-amber-500/20 bg-stone-900/50 flex justify-between items-center">
+                <span className="text-xs text-stone-400">Powered by Grok AI</span>
+                <button 
+                  onClick={handleGenerateQuestions} 
+                  disabled={isGeneratingQuestions}
+                  className="bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 px-2 py-1 rounded text-xs flex items-center transition disabled:opacity-50"
+                >
+                  <RefreshCw size={12} className={`mr-1 ${isGeneratingQuestions ? "animate-spin" : ""}`} /> 
+                  {aiQuestions.length > 0 ? "Refresh" : "Generate"}
+                </button>
+              </div>
+              <div className="flex-1 overflow-y-auto p-3 space-y-3">
+                {isGeneratingQuestions ? (
+                  <div className="text-center py-8 text-stone-400">
+                    <RefreshCw size={24} className="animate-spin mx-auto mb-2 text-amber-500" />
+                    <p className="text-sm">Analyzing candidate & generating questions...</p>
+                  </div>
+                ) : aiQuestions.length > 0 ? (
+                  <ul className="space-y-3">
+                    {aiQuestions.map((q, idx) => (
+                      <li key={idx} className="bg-stone-800/50 border border-stone-700 p-3 rounded-lg text-sm text-stone-200">
+                        {q}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <div className="text-center py-8 text-stone-500 text-sm">
+                    <HelpCircle size={32} className="mx-auto mb-2 opacity-30" />
+                    <p>Click generate to get AI-suggested interview questions tailored for this candidate.</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Feedback Notes Content */}
+          {activeTab === "feedback" && isInterviewer && (
+            <div className="flex-1 flex flex-col overflow-hidden">
+              <div className="flex-1 overflow-y-auto p-3 space-y-3">
+                {feedbackNotes.length === 0 ? (
+                  <div className="text-center py-8 text-stone-500 text-sm">
+                    <Edit2 size={32} className="mx-auto mb-2 opacity-30" />
+                    <p>No feedback notes yet.</p>
+                    <p className="text-xs mt-1 opacity-70">Add notes during the interview for later review.</p>
+                  </div>
+                ) : (
+                  feedbackNotes.map((note) => (
+                    <div key={note._id} className="bg-stone-800/50 border border-stone-700 p-3 rounded-lg flex flex-col gap-2">
+                      <p className="text-sm text-stone-200">{note.text}</p>
+                      <div className="flex justify-between items-center mt-1">
+                        <span className="text-[10px] text-stone-500">
+                          {new Date(note.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                        <div className="flex gap-2">
+                          <button 
+                            onClick={() => { setEditingNoteId(note._id); setFeedbackInput(note.text); }}
+                            className="text-stone-400 hover:text-amber-400 transition"
+                          >
+                            <Edit2 size={12} />
+                          </button>
+                          <button 
+                            onClick={() => handleDeleteFeedbackNote(note._id)}
+                            className="text-stone-400 hover:text-red-400 transition"
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+              <div className="border-t border-amber-500/30 p-2 flex flex-col gap-2 bg-stone-900/50">
+                <textarea
+                  value={feedbackInput}
+                  onChange={(e) => setFeedbackInput(e.target.value)}
+                  placeholder={editingNoteId ? "Edit note..." : "Add private note..."}
+                  className="w-full bg-stone-800 text-white px-3 py-2 rounded text-sm focus:outline-none focus:ring-1 focus:ring-amber-500 resize-none h-16"
+                />
+                <div className="flex justify-between items-center">
+                  {editingNoteId ? (
+                    <button 
+                      onClick={() => { setEditingNoteId(null); setFeedbackInput(""); }}
+                      className="text-xs text-stone-400 hover:text-stone-200"
+                    >
+                      Cancel Edit
+                    </button>
+                  ) : <div></div>}
+                  <button 
+                    onClick={handleSaveFeedbackNote}
+                    disabled={!feedbackInput.trim()}
+                    className="bg-amber-500/20 hover:bg-amber-500 text-amber-400 hover:text-black px-3 py-1.5 rounded text-xs font-semibold transition disabled:opacity-50 disabled:hover:bg-amber-500/20 disabled:hover:text-amber-400"
+                  >
+                    {editingNoteId ? "Update Note" : "Add Note"}
+                  </button>
+                </div>
+              </div>
             </div>
           )}
         </div>

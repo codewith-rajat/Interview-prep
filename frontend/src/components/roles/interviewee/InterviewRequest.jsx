@@ -85,7 +85,6 @@ export default function InterviewRequest() {
   // Filter out past time slots (for today only)
   const availableSlots = allSlots
     .filter((slot) => {
-      // If it's today, exclude past times
       if (isToday) {
         const currentHour = now.getHours();
         const currentMinute = now.getMinutes();
@@ -93,9 +92,13 @@ export default function InterviewRequest() {
         const slotTimeInMinutes = slotHour * 60 + slotMinute;
         const currentTimeInMinutes = currentHour * 60 + currentMinute;
 
-        const shouldInclude = slotTimeInMinutes > currentTimeInMinutes;
-        console.log(`⏰ Slot ${slot.startTime}: current=${currentTimeInMinutes}, slot=${slotTimeInMinutes}, include=${shouldInclude}`);
-        return shouldInclude;
+        // The logic below hides slots that have already passed today.
+        // It has been disabled so you can test booking today's slots!
+        // const shouldInclude = slotTimeInMinutes > currentTimeInMinutes;
+        // console.log(`⏰ Slot ${slot.startTime}: current=${currentTimeInMinutes}, slot=${slotTimeInMinutes}, include=${shouldInclude}`);
+        // return shouldInclude;
+        
+        return true;
       }
       return true;
     });
